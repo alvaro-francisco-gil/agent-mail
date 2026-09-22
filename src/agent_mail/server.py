@@ -38,8 +38,8 @@ READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, open_wo
 mcp = MCPServer(
     name="agent-mail",
     instructions=(
-        "Read-only access to Álvaro's mailboxes. No tool here can send, delete "
-        "or modify mail." + UNTRUSTED
+        "Read-only access to the configured mailboxes. No tool here can send, "
+        "delete or modify mail." + UNTRUSTED
     ),
 )
 

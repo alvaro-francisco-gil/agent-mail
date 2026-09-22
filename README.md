@@ -66,7 +66,7 @@ User scope, so it is available everywhere and no project advertises it:
   "mcpServers": {
     "agent-mail": {
       "command": "uv",
-      "args": ["run", "--directory", "/home/powervaro/githubs/agent-mail", "agent-mail"],
+      "args": ["run", "--directory", "/path/to/agent-mail", "agent-mail"],
       "env": { "AGENT_MAIL_HOTMAIL_CLIENT_ID": "..." }
     }
   }
