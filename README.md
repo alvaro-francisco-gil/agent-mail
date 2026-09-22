@@ -26,14 +26,21 @@ point of this package is that it can be read in a sitting.
 
 ## Setup — Outlook / Hotmail
 
-You need an Entra app registration. It is free and takes about five minutes.
+You need an Entra app registration, which must live in a directory. Since June
+2024 a personal Microsoft account cannot register an app without one, and the
+free directory that comes with an [Azure free account](https://azure.microsoft.com/en-us/pricing/purchase-options/azure-account)
+is the usual way to get one — the card is identity verification and is not
+charged, and app registrations stay free after the trial ends.
 
 1. Sign in to https://go.microsoft.com/fwlink/?linkid=2083908 **with the
    Microsoft account whose mail you want to read**.
 2. **New registration**, name it `agent-mail`.
-3. Supported account types: **"Accounts in any organizational directory and
-   personal Microsoft accounts"**. Anything narrower excludes a personal
-   `@hotmail.com` or `@outlook.com` address.
+3. Supported account types: **"Personal accounts only"** — the narrowest option
+   that can sign in an `@hotmail.com` or `@outlook.com` mailbox. The portal also
+   offers *"Any Entra ID Tenant + Personal Microsoft accounts"*, which works but
+   leaves the app willing to accept sign-ins from every Entra tenant for no
+   benefit. If you pick that one instead, set
+   `AGENT_MAIL_MS_AUTHORITY=https://login.microsoftonline.com/common/oauth2/v2.0`.
 4. Leave the redirect URI empty — the device-code flow needs none.
 5. *Authentication* → **"Allow public client flows" → Yes**. Without it the
    device-code grant is refused.

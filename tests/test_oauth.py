@@ -116,3 +116,16 @@ def test_offline_access_is_always_requested(tmp_path, monkeypatch):
     monkeypatch.setattr("agent_mail.oauth._post_form", fake_post)
     DeviceCodeAuth("cid", ["Mail.Read"], cache, prompt=lambda m: None).access_token()
     assert "offline_access" in seen["first"]["scope"]
+
+
+def test_authority_matches_a_personal_accounts_only_registration():
+    """The Entra app is registered "Personal accounts only", the narrowest type
+    that can sign in an @hotmail.com mailbox. /common would also work, but it
+    advertises willingness to accept sign-ins from every Entra tenant for no
+    benefit. If this assertion fails, the registration and the code disagree and
+    sign-in will fail confusingly."""
+    from agent_mail import oauth
+
+    assert "/consumers/" in oauth.AUTHORITY
+    assert oauth.DEVICECODE_URL.endswith("/devicecode")
+    assert oauth.TOKEN_URL.endswith("/token")

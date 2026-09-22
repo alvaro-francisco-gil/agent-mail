@@ -7,9 +7,8 @@ and the point of this server is that it can be read in one sitting.
 Endpoints and error codes are from Microsoft's documentation, fetched
 2026-09-22: https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code
 
-`/common` accepts personal Microsoft accounts. The app is a public client, so
-there is no client secret anywhere in this file -- if you find yourself wanting
-one, the app registration is wrong.
+The app is a public client, so there is no client secret anywhere in this file.
+If you find yourself wanting one, the app registration is wrong.
 """
 
 from __future__ import annotations
@@ -23,7 +22,16 @@ import urllib.request
 from pathlib import Path
 from typing import Callable, Iterable
 
-AUTHORITY = "https://login.microsoftonline.com/common/oauth2/v2.0"
+# /consumers, not /common. The app registration is "Personal accounts only",
+# which is the narrowest type that can sign in an @hotmail.com mailbox, and
+# /consumers is the authority that matches it. /common would also work but
+# advertises a willingness to accept sign-ins from every Entra tenant there is,
+# which buys nothing here.
+#
+# Override only if the registration's supported account types change.
+AUTHORITY = os.environ.get(
+    "AGENT_MAIL_MS_AUTHORITY", "https://login.microsoftonline.com/consumers/oauth2/v2.0"
+)
 DEVICECODE_URL = f"{AUTHORITY}/devicecode"
 TOKEN_URL = f"{AUTHORITY}/token"
 DEVICE_CODE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
