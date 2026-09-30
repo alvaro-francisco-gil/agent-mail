@@ -6,7 +6,7 @@ applications registered to run them, including the LinkedIn application
 the EU Digital Markets Act to read its author's own LinkedIn data through the
 Member Data Portability API.
 
-**Last updated:** 2026-09-23
+**Last updated:** 2026-09-30
 
 ## Who this is for
 
@@ -38,20 +38,33 @@ contact details.
 
 ## Access tokens
 
-Tokens are held in a password manager and read from the environment at run time.
-They are never committed to a repository.
+- **Mail:** the Outlook token and the IMAP app passwords live on the author's machine
+  in `~/.config/agent-mail/<account>.json`, each file mode `0600` inside a `0700`
+  directory. The Outlook client ID is read from the environment.
+- **LinkedIn:** the token is held in a password manager and read from the environment
+  at run time.
+
+None of them is ever committed to a repository.
 
 ## Read-only by construction
 
 These tools cannot write, send, delete or modify anything in the accounts they
-read. That is enforced by the scopes the provider issues rather than by a promise
-the code makes about itself — see
-[the reasoning](https://github.com/alvaro-francisco-gil/agent-mail).
+read. What enforces that depends on the account:
+
+- **Outlook and LinkedIn: the provider.** The scopes issued are read-only (for Outlook,
+  `Mail.Read` and `User.Read`), so the provider refuses any write.
+- **Gmail and the DonDominio mailbox: the code.** These are read over IMAP with an app
+  password, which could send. No code path does: every folder is opened read-only,
+  every fetch leaves messages unread, and tests pin each mailbox's public surface to
+  listing, searching and reading.
+
+See [the reasoning](https://github.com/alvaro-francisco-gil/agent-mail).
 
 ## Revoking access
 
 The account holder can revoke authorisation at any time from the provider's own
-settings — for LinkedIn, under data and permitted services. After revocation the
+settings — for LinkedIn, under data and permitted services; for Outlook, under the
+account's app permissions; for Gmail and DonDominio, by deleting the app password. After revocation the
 application can read nothing.
 
 ## Retention and deletion
