@@ -58,3 +58,29 @@ def test_frozen():
         assert "frozen" in str(exc).lower() or exc.__class__.__name__ == "FrozenInstanceError"
     else:
         raise AssertionError("MessageSummary must be immutable")
+
+
+# --- RFC 2047 encoded headers ----------------------------------------------
+# Non-ASCII headers travel encoded. Graph hands them over already decoded, so the
+# IMAP side must too or Spanish subjects arrive as =?utf-8?b?...?= -- which is what
+# the real gmail mailbox returned on 2026-09-30.
+
+def _headers(raw: str):
+    import email
+    return email.message_from_string(raw)
+
+
+def test_an_encoded_subject_is_decoded():
+    msg = _headers("Subject: Nuevo inicio de =?utf-8?b?c2VzacOzbg==?=\n\n")
+    assert MessageSummary.from_imap(msg, "gmail", "i").subject == "Nuevo inicio de sesión"
+
+
+def test_an_encoded_sender_name_is_decoded():
+    msg = _headers("From: =?utf-8?q?Jos=C3=A9?= <j@example.com>\n\n")
+    summary = MessageSummary.from_imap(msg, "gmail", "i")
+    assert (summary.sender_name, summary.sender_address) == ("José", "j@example.com")
+
+
+def test_an_undecodable_header_is_passed_through_rather_than_raising():
+    msg = _headers("Subject: =?bogus-charset?q?x?=\n\n")
+    assert MessageSummary.from_imap(msg, "gmail", "i").subject
