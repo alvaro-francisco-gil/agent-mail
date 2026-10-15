@@ -18,3 +18,7 @@ packages = ["src/agent_mail"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+# Live tests reach the real mail servers, so they never run by accident:
+# `pytest -m live` overrides this, since the last -m wins.
+addopts = "-m 'not live'"
+markers = ["live: talks to a real mail server, read-only; run with -m live"]

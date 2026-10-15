@@ -146,6 +146,9 @@ def _fake_imap(der, log):
         def logout(self):
             log["logout"] = True
 
+        def shutdown(self):
+            log["shutdown"] = True
+
     return FakeIMAP
 
 
@@ -161,6 +164,7 @@ def test_a_pinned_account_refuses_a_wrong_certificate_before_it_authenticates(cr
         mailbox.list_recent()
 
     assert "login" not in log, "the password was sent to an unverified server"
+    assert log.get("shutdown"), "the refused connection was left open"
 
 
 def test_a_pinned_account_proceeds_when_the_certificate_matches(creds, monkeypatch):

@@ -98,8 +98,36 @@ User scope, so it is available everywhere and no project advertises it:
 uv run pytest
 ```
 
-Fully mocked. **No test may touch the network or a real mailbox** — keep it that
-way.
+Fully mocked, and offline. **The default run may not touch the network or a real
+mailbox** — keep it that way.
+
+### Live tests, against the real servers
+
+```bash
+uv run pytest -m live
+```
+
+A fake is built from the same beliefs as the code, so it shares their mistakes:
+every defect described under [TLS](#tls-verified-for-gmail-pinned-for-dondominio) and
+[the two things that look right](#two-things-that-look-right-and-are-not)
+passed a fake and was found by hand. `tests/test_live.py` lets the servers
+disagree. It asserts the TLS posture actually in force (Gmail CA-verified,
+DonDominio *not* CA-verifiable and matching its pin, and a wrong pin refused
+**before** `login`), that a listing of 20 has a sender, subject and date on every
+row and returns inside 15 seconds, that an id reads back, and that reading leaves
+a message's flags unchanged.
+
+Rules for that file:
+
+- **Read-only, always.** Connect, check, log in, `SELECT` readonly, `BODY.PEEK`,
+  log out. It runs with a password that could send.
+- Deselected by default (`addopts` in `pyproject.toml`); `-m live` selects it.
+- Each account **skips** when its credential is missing, so a machine with none
+  still passes. `hotmail` also needs `AGENT_MAIL_HOTMAIL_CLIENT_ID` in the
+  environment, and skips rather than hanging if its refresh token has died —
+  the device-code fallback would otherwise poll for fifteen minutes.
+- Failures count problems; they never quote a subject or an address.
+- Not in CI: that would mean putting mail credentials in CI.
 
 ## Setup — the IMAP accounts (`gmail`, `cultuvilla`)
 

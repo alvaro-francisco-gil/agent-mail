@@ -120,7 +120,12 @@ def _imap_mailbox(account: str, host: str, filename: str, pin: str | None) -> Im
         if pin is not None:
             # Before login, deliberately. Checking afterwards would mean the
             # password had already gone to whoever presented the certificate.
-            assert_fingerprint(conn.sock.getpeercert(True), pin)
+            try:
+                assert_fingerprint(conn.sock.getpeercert(True), pin)
+            except Exception:
+                # No LOGOUT: nothing more is said to a server that failed the pin.
+                conn.shutdown()
+                raise
         conn.login(username, password)
         return conn
 

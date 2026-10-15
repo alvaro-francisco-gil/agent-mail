@@ -1,10 +1,11 @@
 # Sending, over SMTP, behind approval and a cancel window
 
 **Priority:** medium
-**Gate:** blocked:live-transport-tests
-**Next:** connect, STARTTLS and authenticate against `smtp.gmail.com:587` and
-`smtp.cultuvilla.es:587` **without sending anything**, and record which ports and
-TLS modes actually answer
+**Gate:** none — the live transport tests landed 2026-10-15 (`tests/test_live.py`)
+**Next:** as live tests in `tests/test_live.py`, connect, STARTTLS and authenticate
+against `smtp.gmail.com:587` and `mailsrv1.dondominio.com:587` **without sending
+anything** — not `smtp.cultuvilla.es`, which is not on DonDominio's SMTP
+certificate (README, TLS section)
 
 ## Goal
 
