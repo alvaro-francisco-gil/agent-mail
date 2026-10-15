@@ -302,3 +302,74 @@ def test_no_write_methods_exist():
     behind its own approval, not as a method here."""
     surface = {name for name in dir(ImapMailbox) if not name.startswith("_")}
     assert surface == {"list_recent", "search", "read"}
+
+
+# --- H3: IMAP command injection ---------------------------------------------
+# Found by the security review of 2026-09-30 and confirmed against the real
+# server on 2026-10-15: a query carrying CRLF became a second command, and the
+# server executed it. That defeats read-only, which is the whole promise of this
+# package, so these are the tests that matter most in this file.
+
+CRLF_PAYLOAD = "x\r\nA1 EXPUNGE"
+
+
+def test_a_query_carrying_crlf_is_refused():
+    c = FakeIMAP()
+    with pytest.raises(ValueError, match="control character"):
+        mailbox(c).search(CRLF_PAYLOAD)
+    assert not any("EXPUNGE" in i for i in c.issued)
+
+
+def test_a_query_carrying_a_bare_newline_is_refused():
+    with pytest.raises(ValueError, match="control character"):
+        mailbox(FakeIMAP()).search("x\nA1 EXPUNGE")
+
+
+def test_a_query_carrying_a_nul_is_refused():
+    with pytest.raises(ValueError, match="control character"):
+        mailbox(FakeIMAP()).search("x\x00y")
+
+
+def test_nothing_is_sent_when_a_query_is_refused():
+    """The guard must run before a connection is opened, not after."""
+    opened = []
+
+    def connect():
+        opened.append(True)
+        return FakeIMAP()
+
+    with pytest.raises(ValueError, match="control character"):
+        ImapMailbox(connect, account="gmail").search(CRLF_PAYLOAD)
+    assert opened == []
+
+
+def test_a_folder_smuggled_through_a_message_id_is_refused():
+    """read() takes the folder from the id, so the id is an injection surface
+    too -- a crafted one would otherwise reach SELECT unquoted."""
+    c = FakeIMAP()
+    with pytest.raises(ValueError, match="control character"):
+        mailbox(c).read("INBOX\r\nA1 EXPUNGE:1000:12")
+    assert not any("EXPUNGE" in i for i in c.issued)
+
+
+def test_a_multi_word_query_is_sent_as_one_quoted_string():
+    """Unquoted, `clean drafts` is two search keys rather than one phrase, so
+    this was a correctness bug as well as a security one."""
+    c = FakeIMAP()
+    mailbox(c).search("clean drafts")
+    assert any('"clean drafts"' in i for i in c.issued)
+
+
+def test_a_quote_inside_a_query_is_escaped_not_refused():
+    c = FakeIMAP()
+    mailbox(c).search('say "hello"')
+    assert any(r'\"hello\"' in i for i in c.issued)
+
+
+def test_a_non_ascii_query_is_refused_clearly_rather_than_crashing():
+    """Pre-existing and not part of H3: imaplib encodes arguments as ASCII, so a
+    Spanish search term raised UnicodeEncodeError from deep inside the library.
+    A clear refusal is strictly better than that, since the capability does not
+    work either way -- see the README for why the real fix is not a one-liner."""
+    with pytest.raises(ValueError, match="non-ASCII"):
+        mailbox(FakeIMAP()).search("sesión")

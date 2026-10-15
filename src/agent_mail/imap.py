@@ -68,11 +68,36 @@ def decode_id(message_id: str) -> tuple[str, str, str]:
             f"{message_id!r} is not an agent-mail message id; expected "
             "folder:uidvalidity:uid, as returned by mail_search or mail_list_recent"
         )
+    # The folder half reaches SELECT and STATUS, so an id is an injection surface
+    # too. Checked here rather than at the call site, so every caller is covered
+    # and the refusal happens before a connection is opened.
+    _reject_control_chars(parts[0], "the folder in a message id")
     return parts[0], parts[1], parts[2]
 
 
-def _quote(folder: str) -> str:
-    return '"' + folder.replace("\\", "\\\\").replace('"', '\\"') + '"'
+# An IMAP quoted string cannot carry CR, LF or NUL: they end the command. So a
+# value containing one cannot be escaped, only refused. This is the fix for the
+# injection found by the security review of 2026-09-30 and confirmed against a
+# live server on 2026-10-15, where a search query of "x\\r\\nA1 CAPABILITY" had its
+# second command executed. Unrefused, the same shape reaches EXPUNGE, STORE and
+# APPEND, and the read-only promise of this package becomes false.
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _reject_control_chars(value: str, what: str) -> str:
+    found = _CONTROL.search(value)
+    if found:
+        raise ValueError(
+            f"{what} contains a control character ({found.group(0)!r}), which "
+            "cannot appear in an IMAP command and would be read as a second one"
+        )
+    return value
+
+
+def _quote(value: str) -> str:
+    """An IMAP quoted string: backslash and quote escaped, controls refused."""
+    _reject_control_chars(value, "value")
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def _folder_names(conn) -> list[str]:
@@ -175,7 +200,21 @@ class ImapMailbox:
         return self._summaries(("ALL",), limit)
 
     def search(self, query: str, limit: int = 20) -> list[MessageSummary]:
-        return self._summaries(("TEXT", query), limit)
+        """Quoted, not interpolated.
+
+        Unquoted, a multi-word query was parsed as several search keys -- so this
+        was a correctness bug as well as the injection one. Validation happens
+        before any connection is opened.
+        """
+        if not query.isascii():
+            raise ValueError(
+                "the search query contains non-ASCII characters, which this "
+                "transport cannot send yet. IMAP needs SEARCH CHARSET UTF-8, and "
+                "the two servers disagree about its form -- DonDominio accepts a "
+                "quoted term, Gmail answers BAD and wants a literal. Use an ASCII "
+                "term for now; see README.md."
+            )
+        return self._summaries(("TEXT", _quote(query)), limit)
 
     def read(self, message_id: str) -> Message:
         folder, uidvalidity, uid = decode_id(message_id)

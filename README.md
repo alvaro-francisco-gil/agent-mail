@@ -150,6 +150,25 @@ https://myaccount.google.com/apppasswords
 - **Nothing is ever marked read.** Every `SELECT` is readonly and every fetch uses
   `BODY.PEEK`.
 
+### Search cannot take a non-ASCII term yet
+
+`search("sesión")` is **refused with a clear error**. imaplib encodes arguments as
+ASCII, so before the refusal existed it raised `UnicodeEncodeError` from inside the
+library. The capability did not work either way; the refusal only makes that
+legible.
+
+The real fix is `SEARCH CHARSET UTF-8`, and it is not a one-liner because the two
+servers disagree about its form (tested 2026-10-15, neither advertises
+`UTF8=ACCEPT`):
+
+| Server | `UID SEARCH CHARSET UTF-8 TEXT "término"` |
+|---|---|
+| `imap.cultuvilla.es` | `OK` |
+| `imap.gmail.com` | `BAD Could not parse command` — wants a literal, not a quoted string |
+
+So it needs a literal and probably a per-server branch. Worth doing: half of
+Álvaro's mail is in Spanish.
+
 ### Two things that look right and are not
 
 Both were found against real mailboxes rather than by tests, and both are worth
@@ -165,3 +184,17 @@ sit kilobytes in and every summary came back blank. Ask for the named fields wit
 All Mail it means tens of thousands of fetches for a twenty-message listing. UIDs
 ascend with arrival, so take the last `limit` per folder: anything below that is
 older than `limit` messages in the same folder and cannot reach the merged top.
+
+**And a third, which was a live security hole rather than a rough edge.** A search
+query and the folder half of a message id reached the server **unquoted, with CR
+and LF allowed**, so a value like `x\r\nA1 EXPUNGE` became a *second IMAP command*
+and the server ran it. Confirmed against a live server on 2026-10-15 with an inert
+`CAPABILITY` payload, which the server executed. That made the read-only promise at
+the top of this file false for the IMAP accounts: an injected email could have
+steered a search into `EXPUNGE`, `STORE` or `APPEND`.
+
+Two things fix it, and both belong in any value crossing into a command:
+`_reject_control_chars`, because a control character cannot be escaped inside an
+IMAP quoted string and can only be refused; and quoting the query, which also fixed
+a plain correctness bug — unquoted, `clean drafts` was parsed as two search keys
+rather than one phrase. Found by the security review of 2026-09-30 as **H3**.
