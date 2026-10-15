@@ -150,6 +150,40 @@ https://myaccount.google.com/apppasswords
 - **Nothing is ever marked read.** Every `SELECT` is readonly and every fetch uses
   `BODY.PEEK`.
 
+### TLS: verified for Gmail, pinned for DonDominio
+
+`imaplib.IMAP4_SSL` **does not verify anything unless you hand it a context.**
+Given none it calls `ssl._create_stdlib_context()`, whose defaults are
+`check_hostname=False` and `verify_mode=CERT_NONE`. This package passed none until
+2026-10-15, so every IMAP connection was unverified and anyone in a network
+position could have read the mail and taken the password that also sends.
+
+The two providers need different answers, and both were established by inspection
+rather than assumption:
+
+| | Certificate | How it is trusted |
+|---|---|---|
+| `imap.gmail.com` | normally chained | `ssl.create_default_context()`, nothing special |
+| `imap.cultuvilla.es` | **self-signed** — CN *"Mail Service"*, issuer *Soluciones Corporativas IP, SL*, valid 2019→**2074** | SHA-256 **pin** in `tls.py` |
+
+**The pin is stronger than CA verification here, not a concession.** No public CA
+will ever chain that certificate, on any hostname, so the alternatives were an
+unverified connection or none at all. A pin accepts exactly one certificate, where
+CA verification accepts any certificate a CA will sign.
+
+Two details that are load-bearing:
+
+- **The fingerprint is checked before `login`.** Checking after would mean the
+  password had already gone to whoever presented the certificate.
+- **A rotation fails loudly**, with both fingerprints in the error. Verify the new
+  certificate out of band, then update `tls.py` — a fingerprint is a public value,
+  so it lives in the source where a reviewer sees it change.
+
+Their **SMTP** is a different story and better: port 587 presents a real Sectigo
+certificate for `*.dondominio.com`, so submission verifies normally **when
+addressed as `mailsrv1.dondominio.com`**. `smtp.cultuvilla.es` fails only because
+that name is not on the certificate.
+
 ### Search cannot take a non-ASCII term yet
 
 `search("sesión")` is **refused with a clear error**. imaplib encodes arguments as

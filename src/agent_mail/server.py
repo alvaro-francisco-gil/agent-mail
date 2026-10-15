@@ -31,17 +31,23 @@ from mcp.types import ToolAnnotations
 from .graph import GraphMailbox
 from .imap import ImapMailbox
 from .oauth import DeviceCodeAuth
+from .tls import DONDOMINIO_MAIL_SHA256, assert_fingerprint, context_for
 
 GRAPH_SCOPES = ["https://graph.microsoft.com/Mail.Read", "https://graph.microsoft.com/User.Read"]
 
 IMAP_PORT = 993
 
-# account -> (host, credential filename). Hosts verified by a real login on
-# 2026-09-30; DonDominio publishes no client-setup article, so imap.cultuvilla.es
-# was resolved rather than read (a CNAME to mailsrv1.dondominio.com).
+# account -> (host, credential filename, pinned certificate or None). Hosts
+# verified by a real login on 2026-09-30; DonDominio publishes no client-setup
+# article, so imap.cultuvilla.es was resolved rather than read (a CNAME to
+# mailsrv1.dondominio.com).
+#
+# The pin is not an optimisation. DonDominio's IMAP presents a self-signed
+# certificate that no CA can chain, so without it the only options were an
+# unverified connection or no connection -- see tls.py.
 IMAP_ACCOUNTS = {
-    "gmail": ("imap.gmail.com", "gmail.json"),
-    "cultuvilla": ("imap.cultuvilla.es", "cultuvilla.json"),
+    "gmail": ("imap.gmail.com", "gmail.json", None),
+    "cultuvilla": ("imap.cultuvilla.es", "cultuvilla.json", DONDOMINIO_MAIL_SHA256),
 }
 
 ACCOUNTS = ("hotmail", *IMAP_ACCOUNTS)
@@ -99,7 +105,7 @@ def _imap_credentials(filename: str) -> tuple[str, str]:
     return data["username"], password
 
 
-def _imap_mailbox(account: str, host: str, filename: str) -> ImapMailbox:
+def _imap_mailbox(account: str, host: str, filename: str, pin: str | None) -> ImapMailbox:
     """Credentials are read now; the connection is opened per operation.
 
     Reading the file eagerly turns a missing credential into an error at the first
@@ -110,7 +116,11 @@ def _imap_mailbox(account: str, host: str, filename: str) -> ImapMailbox:
     username, password = _imap_credentials(filename)
 
     def connect():
-        conn = imaplib.IMAP4_SSL(host, IMAP_PORT)
+        conn = imaplib.IMAP4_SSL(host, IMAP_PORT, ssl_context=context_for(pin))
+        if pin is not None:
+            # Before login, deliberately. Checking afterwards would mean the
+            # password had already gone to whoever presented the certificate.
+            assert_fingerprint(conn.sock.getpeercert(True), pin)
         conn.login(username, password)
         return conn
 
@@ -139,8 +149,8 @@ def _mailbox(account: str) -> GraphMailbox | ImapMailbox:
         return _mailboxes[account]
 
     if account in IMAP_ACCOUNTS:
-        host, filename = IMAP_ACCOUNTS[account]
-        _mailboxes[account] = _imap_mailbox(account, host, filename)
+        host, filename, pin = IMAP_ACCOUNTS[account]
+        _mailboxes[account] = _imap_mailbox(account, host, filename, pin)
         return _mailboxes[account]
 
     raise ValueError(

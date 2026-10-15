@@ -4,6 +4,7 @@ import pytest
 
 from agent_mail import server
 from agent_mail.imap import ImapMailbox
+from agent_mail.tls import DONDOMINIO_MAIL_SHA256, CertificateMismatch
 
 
 def test_unknown_account_names_the_valid_ones():
@@ -94,3 +95,95 @@ def test_no_tool_mentions_sending():
     names = [n for n in dir(server) if n.startswith("mail_")]
     assert names, "expected mail_* tools"
     assert not [n for n in names if any(word in n for word in forbidden)]
+
+
+# --- TLS ---------------------------------------------------------------------
+
+def test_gmail_is_not_pinned_because_it_verifies_normally():
+    host, filename, pin = server.IMAP_ACCOUNTS["gmail"]
+    assert pin is None
+
+
+def test_cultuvilla_is_pinned_because_its_certificate_is_self_signed():
+    host, filename, pin = server.IMAP_ACCOUNTS["cultuvilla"]
+    assert pin == DONDOMINIO_MAIL_SHA256
+
+
+class _FakeSock:
+    def __init__(self, der):
+        self._der = der
+
+    def getpeercert(self, binary_form=False):
+        return self._der
+
+
+def _fake_imap(der, log):
+    """Enough of the protocol for a listing to complete and find nothing.
+
+    These tests are about the TLS handshake and the order of login, so the
+    mailbox itself is deliberately empty.
+    """
+    class FakeIMAP:
+        def __init__(self, host, port, ssl_context=None):
+            log["context"] = ssl_context
+            self.sock = _FakeSock(der)
+
+        def login(self, user, password):
+            log["login"] = True
+
+        def list(self):
+            return "OK", [b'(\\HasNoChildren) "/" "INBOX"']
+
+        def select(self, folder, readonly=False):
+            return "OK", [b"0"]
+
+        def status(self, folder, what):
+            return "OK", [b'"INBOX" (UIDVALIDITY 1)']
+
+        def uid(self, command, *args):
+            return "OK", [b""]
+
+        def logout(self):
+            log["logout"] = True
+
+    return FakeIMAP
+
+
+def test_a_pinned_account_refuses_a_wrong_certificate_before_it_authenticates(creds, monkeypatch):
+    """The order is the point. Checking the certificate after login would have
+    already handed the password to whoever presented it."""
+    creds("cultuvilla.json", username="u@cultuvilla.es", password="p")
+    log = {}
+    monkeypatch.setattr(server.imaplib, "IMAP4_SSL", _fake_imap(b"not the pinned cert", log))
+
+    mailbox = server._mailbox("cultuvilla")
+    with pytest.raises(CertificateMismatch):
+        mailbox.list_recent()
+
+    assert "login" not in log, "the password was sent to an unverified server"
+
+
+def test_a_pinned_account_proceeds_when_the_certificate_matches(creds, monkeypatch):
+    import hashlib
+    der = b"the real certificate"
+    creds("cultuvilla.json", username="u@cultuvilla.es", password="p")
+    monkeypatch.setattr(server, "IMAP_ACCOUNTS", dict(
+        server.IMAP_ACCOUNTS,
+        cultuvilla=("imap.cultuvilla.es", "cultuvilla.json", hashlib.sha256(der).hexdigest()),
+    ))
+    log = {}
+    monkeypatch.setattr(server.imaplib, "IMAP4_SSL", _fake_imap(der, log))
+
+    server._mailbox("cultuvilla").list_recent()
+    assert log.get("login") is True
+
+
+def test_an_unpinned_account_is_given_a_verifying_context(creds, monkeypatch):
+    import ssl
+    creds("gmail.json", username="u@gmail.com", app_password="p")
+    log = {}
+    monkeypatch.setattr(server.imaplib, "IMAP4_SSL", _fake_imap(b"x", log))
+
+    server._mailbox("gmail").list_recent()
+    assert log["context"].verify_mode is ssl.CERT_REQUIRED
+    assert log["context"].check_hostname is True
