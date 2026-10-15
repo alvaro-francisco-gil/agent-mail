@@ -1,7 +1,7 @@
 # Sending, over SMTP, behind approval and a cancel window
 
 **Priority:** medium
-**Gate:** none
+**Gate:** blocked:live-transport-tests
 **Next:** connect, STARTTLS and authenticate against `smtp.gmail.com:587` and
 `smtp.cultuvilla.es:587` **without sending anything**, and record which ports and
 TLS modes actually answer
