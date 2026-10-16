@@ -1,15 +1,15 @@
 # AGENTS.md — agent-mail
 
 Read-only access to personal mailboxes, over MCP: Outlook/Hotmail through Microsoft
-Graph (`hotmail`), and Gmail (`gmail`) and a DonDominio mailbox (`cultuvilla`) through
-IMAP. The repo is public; `README.md` is the full story, `PRIVACY.md` the policy.
+Graph (`hotmail`), and three Gmail accounts (`gmail`, `cultuvilla-gmail`, `ordago-gmail`)
+and a DonDominio mailbox (`cultuvilla`) through IMAP. The repo is public; `README.md` is the full story, `PRIVACY.md` the policy.
 
 ## The promise: nothing here can send, delete or modify mail
 
 What enforces it differs by account:
 
 - `hotmail`: **the token.** Scopes are `Mail.Read` and `User.Read`; Microsoft refuses writes.
-- `gmail`, `cultuvilla`: **the code.** The password could send; no code path does.
+- the IMAP accounts: **the code.** The password could send; no code path does.
   `tests/test_graph.py` and `tests/test_imap.py` assert each mailbox's public surface is
   exactly `{list_recent, search, read}`. On the IMAP side that test *is* the security
   control.

@@ -11,7 +11,7 @@ differs by account, and the difference is the whole security story:
 | Account | What stops a write |
 |---|---|
 | `hotmail` | **the token.** Scopes are `Mail.Read` and `User.Read` — not `Mail.ReadWrite`, not `Mail.Send`. Microsoft would refuse a write |
-| `gmail`, `cultuvilla` | **the code.** The credential is a password that could send; there is simply no code path that does |
+| the IMAP accounts (`gmail`, `cultuvilla-gmail`, `ordago-gmail`, `cultuvilla`) | **the code.** The credential is a password that could send; there is simply no code path that does |
 
 That second row is weaker than the first and was accepted deliberately, because
 neither provider will issue a read-only credential worth having. What follows from
@@ -129,7 +129,7 @@ Rules for that file:
 - Failures count problems; they never quote a subject or an address.
 - Not in CI: that would mean putting mail credentials in CI.
 
-## Setup — the IMAP accounts (`gmail`, `cultuvilla`)
+## Setup — the IMAP accounts
 
 **Why IMAP and not OAuth.** `gmail.readonly` is a Google *restricted* scope: a
 Testing-mode consent screen expires its refresh token every seven days, production
@@ -147,6 +147,8 @@ Each account reads one JSON file from the cache directory:
 | Account | Host | File | Username |
 |---|---|---|---|
 | `gmail` | `imap.gmail.com:993` | `gmail.json` | the full address |
+| `cultuvilla-gmail` | `imap.gmail.com:993` | `cultuvilla-gmail.json` | the full address |
+| `ordago-gmail` | `imap.gmail.com:993` | `ordago-gmail.json` | the full address |
 | `cultuvilla` | `imap.cultuvilla.es:993` | `cultuvilla.json` | the full address |
 
 Either `password` or `app_password` is accepted as the key, so the file written for

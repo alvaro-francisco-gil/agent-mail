@@ -8,7 +8,7 @@ from agent_mail.tls import DONDOMINIO_MAIL_SHA256, CertificateMismatch
 
 
 def test_unknown_account_names_the_valid_ones():
-    with pytest.raises(ValueError, match="hotmail, gmail, cultuvilla"):
+    with pytest.raises(ValueError, match="hotmail, gmail, cultuvilla-gmail, ordago-gmail, cultuvilla"):
         server._mailbox("outlook")
 
 
@@ -99,9 +99,15 @@ def test_no_tool_mentions_sending():
 
 # --- TLS ---------------------------------------------------------------------
 
-def test_gmail_is_not_pinned_because_it_verifies_normally():
-    host, filename, pin = server.IMAP_ACCOUNTS["gmail"]
-    assert pin is None
+@pytest.mark.parametrize("account", ["gmail", "cultuvilla-gmail", "ordago-gmail"])
+def test_gmail_is_not_pinned_because_it_verifies_normally(account):
+    host, filename, pin = server.IMAP_ACCOUNTS[account]
+    assert (host, pin) == ("imap.gmail.com", None)
+
+
+def test_each_account_has_its_own_credential_file():
+    filenames = [filename for _, filename, _ in server.IMAP_ACCOUNTS.values()]
+    assert len(filenames) == len(set(filenames))
 
 
 def test_cultuvilla_is_pinned_because_its_certificate_is_self_signed():
