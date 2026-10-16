@@ -86,8 +86,8 @@ def _imap_credentials(filename: str) -> tuple[str, str]:
     if not path.exists():
         raise ValueError(
             f"{path} does not exist. Store the credential with:\n"
-            f"  python3 ~/githubs/scripts/store_secret.py agent-mail/{filename} password\n"
-            f"  python3 ~/githubs/scripts/store_secret.py agent-mail/{filename} username"
+            f"  python3 ~/githubs/_workspace/scripts/store_secret.py agent-mail/{filename} password\n"
+            f"  python3 ~/githubs/_workspace/scripts/store_secret.py agent-mail/{filename} username"
         )
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -100,7 +100,7 @@ def _imap_credentials(filename: str) -> tuple[str, str]:
     if missing:
         raise ValueError(
             f"{path} has no {missing!r}. Add it with:\n"
-            f"  python3 ~/githubs/scripts/store_secret.py agent-mail/{filename} {missing}"
+            f"  python3 ~/githubs/_workspace/scripts/store_secret.py agent-mail/{filename} {missing}"
         )
     return data["username"], password
 

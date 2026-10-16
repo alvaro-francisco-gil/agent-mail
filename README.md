@@ -154,8 +154,8 @@ each provider reads in that provider's own words. Write them without the value
 touching your shell history:
 
 ```bash
-python3 ~/githubs/scripts/store_secret.py agent-mail/gmail.json app_password
-python3 ~/githubs/scripts/store_secret.py agent-mail/gmail.json username
+python3 ~/githubs/_workspace/scripts/store_secret.py agent-mail/gmail.json app_password
+python3 ~/githubs/_workspace/scripts/store_secret.py agent-mail/gmail.json username
 ```
 
 **Gmail's app password is sixteen characters with no spaces.** It is displayed in

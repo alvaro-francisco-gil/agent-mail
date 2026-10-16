@@ -43,7 +43,7 @@ What enforces it differs by account:
   readable in a sitting.
 - Tokens and IMAP credentials live in `~/.config/agent-mail/` (or `AGENT_MAIL_CACHE_DIR`),
   files `0600` in a `0700` directory, opened with those bits. Never write them into a
-  repo. Store IMAP secrets with `python3 ~/githubs/scripts/store_secret.py`, never by
+  repo. Store IMAP secrets with `python3 ~/githubs/_workspace/scripts/store_secret.py`, never by
   pasting them into a shell.
 - Read the "Two things that look right and are not" section of `README.md` before
   changing `imap.py`.
