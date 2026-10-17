@@ -9,7 +9,8 @@ certificate (README, TLS section)
 
 ## Goal
 
-Let the agent send mail from the two password-authenticated accounts, with every
+Let the agent send mail from `gmail` and `cultuvilla`, two of the four password-authenticated
+accounts (the scope decided below), with every
 message approved by Álvaro at the harness prompt and then held briefly so he can
 cancel it.
 
@@ -116,7 +117,8 @@ third party's contact details applies to its own logs.
 **Stage 1 — prove the transport before building on it**
 
 - [ ] Connect, STARTTLS and `AUTH` against `smtp.gmail.com:587`, sending no mail
-- [ ] Same against `smtp.cultuvilla.es:587` (`mailsrv1.dondominio.com`)
+- [ ] Same against `mailsrv1.dondominio.com:587` — not `smtp.cultuvilla.es`, which is not
+      on DonDominio's SMTP certificate (README, TLS section)
 - [ ] Record the working host/port/TLS mode; fall back to implicit TLS on 465 if 587 refuses
 - [ ] Write `smtp.py` test-first against a fake, asserting STARTTLS precedes AUTH
 
