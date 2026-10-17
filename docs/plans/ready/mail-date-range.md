@@ -1,7 +1,6 @@
 # Listing and searching mail by date
 
 **Priority:** medium — today no tool can reach mail older than the newest `limit` matches, which the record repo's mail sweep and every "when did this arrive" question need
-**Gate:** decision:add optional `since` / `before` dates to `mail_list_recent` and `mail_search` on every account?
 
 **Goal:** An agent can ask for mail from a date window ("March 2025 from the AEAT")
 instead of only the newest N, on all five accounts, without a new tool or a new
@@ -92,9 +91,7 @@ listing and the KQL term for search. One `live` test per transport in
 
 ## Approval
 
-**Needs your yes** — the `Gate` question; recommended answer: yes, because it changes
-what the tools can do (a contract change) while keeping every read-only control, and
-it is the cheapest way to make whole-mailbox questions answerable.
+Decided 2026-10-17 (Álvaro): yes — add optional `since` / `before` dates to `mail_list_recent` and `mail_search` on every account?
 
 ## Out of scope
 

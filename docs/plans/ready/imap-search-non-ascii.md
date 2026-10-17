@@ -1,7 +1,6 @@
 # IMAP search takes a Spanish term
 
 **Priority:** medium — known pain the README names itself: "Worth doing: half of Álvaro's mail is in Spanish"
-**Gate:** decision:send non-ASCII IMAP search terms as a `CHARSET UTF-8` literal, verified by a live test on both servers?
 
 **Goal:** `mail_search("sesión", account=…)` works on the four IMAP accounts instead of
 being refused, so a Spanish word can be searched for as it is spelled.
@@ -80,9 +79,7 @@ returns `OK` (results may be empty), without quoting any result.
 
 ## Approval
 
-**Needs your yes** — the `Gate` question; recommended answer: yes, because it lifts
-a refusal the README already calls worth fixing, and the live test decides the one
-open fact (DonDominio and literals) before anything ships.
+Decided 2026-10-17 (Álvaro): yes — send non-ASCII IMAP search terms as a `CHARSET UTF-8` literal, verified by a live test on both servers?
 
 ## Out of scope
 

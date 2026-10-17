@@ -1,7 +1,6 @@
 # Hotmail sign-in that a person can see, and that never hangs a tool call
 
 **Priority:** medium — latent: the first hotmail call after the refresh token dies blocks for up to fifteen minutes and shows the sign-in code to no one
-**Gate:** decision:when hotmail needs a new sign-in, should the tool call return the URL and code as its error (and finish sign-in on the next call) instead of waiting for it?
 **Next:** in `tests/test_oauth.py`, a failing test that a missing token raises
 `SignInRequired` carrying the URL and code without entering the polling loop
 
@@ -81,9 +80,7 @@ the non-interactive auth. The live test's skipping prompt can then go.
 
 ## Approval
 
-**Needs your yes** — the `Gate` question; recommended answer: yes, because the
-current failure is silent and long, and the change keeps the read-only scopes and the
-one-dependency rule.
+Decided 2026-10-17 (Álvaro): yes — when hotmail needs a new sign-in, should the tool call return the URL and code as its error (and finish sign-in on the next call) instead of waiting for it?
 
 ## Out of scope
 
