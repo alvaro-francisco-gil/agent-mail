@@ -197,3 +197,36 @@ def test_an_unpinned_account_is_given_a_verifying_context(creds, monkeypatch):
     server._mailbox("gmail").list_recent()
     assert log["context"].verify_mode is ssl.CERT_REQUIRED
     assert log["context"].check_hostname is True
+
+
+def test_hotmail_signs_in_without_blocking_the_tool_call(monkeypatch, tmp_path):
+    """The server's auth must raise the code, never poll: see test_oauth.py."""
+    monkeypatch.setenv("AGENT_MAIL_HOTMAIL_CLIENT_ID", "cid")
+    monkeypatch.setenv("AGENT_MAIL_CACHE_DIR", str(tmp_path))
+    server._mailboxes.clear()
+    try:
+        assert server._mailbox("hotmail").auth.interactive is False
+    finally:
+        server._mailboxes.clear()
+
+
+def test_login_hotmail_runs_the_interactive_sign_in(monkeypatch, tmp_path):
+    monkeypatch.setenv("AGENT_MAIL_HOTMAIL_CLIENT_ID", "cid")
+    monkeypatch.setenv("AGENT_MAIL_CACHE_DIR", str(tmp_path))
+    built = []
+
+    class FakeAuth:
+        def __init__(self, client_id, scopes, cache_path, **kwargs):
+            built.append(kwargs)
+
+        def access_token(self):
+            return "token"
+
+    monkeypatch.setattr(server, "DeviceCodeAuth", FakeAuth)
+    server.main(["login", "hotmail"])
+    assert built and built[0].get("interactive", True) is True
+
+
+def test_login_refuses_an_account_that_has_no_sign_in():
+    with pytest.raises(SystemExit):
+        server.main(["login", "gmail"])

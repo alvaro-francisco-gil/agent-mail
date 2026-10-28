@@ -64,11 +64,21 @@ Then:
 
 ```bash
 export AGENT_MAIL_HOTMAIL_CLIENT_ID=<the application client id>
-uv run agent-mail
+uv run agent-mail login hotmail   # prints a URL and a code, waits for the sign-in
+uv run agent-mail                 # the MCP server
 ```
 
-First run prints a code and a URL. After that it refreshes silently — Microsoft
-refresh tokens do not carry Google's seven-day testing-mode expiry.
+After that it refreshes silently — Microsoft refresh tokens do not carry Google's
+seven-day testing-mode expiry.
+
+**When the refresh token dies anyway**, a hotmail tool call does not wait for a
+sign-in: it fails at once, and its error is Microsoft's own instruction, a URL
+and a code. Sign in there, then call again: that call finishes the sign-in
+and reads the mail. The pending code waits in
+`hotmail.pending.json`, beside the token, until it is used or expires (about
+fifteen minutes; an expired one is replaced by a new code). The server never
+polls inside a tool call because its stdout is the client's log: a code printed
+there reaches nobody, and the call would hang until the code ran out.
 
 ## Where the tokens live
 
@@ -124,8 +134,8 @@ Rules for that file:
 - Deselected by default (`addopts` in `pyproject.toml`); `-m live` selects it.
 - Each account **skips** when its credential is missing, so a machine with none
   still passes. `hotmail` also needs `AGENT_MAIL_HOTMAIL_CLIENT_ID` in the
-  environment, and skips rather than hanging if its refresh token has died —
-  the device-code fallback would otherwise poll for fifteen minutes.
+  environment, and skips if its refresh token has died: run
+  `uv run agent-mail login hotmail`, then rerun.
 - Failures count problems; they never quote a subject or an address.
 - Not in CI: that would mean putting mail credentials in CI.
 

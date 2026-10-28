@@ -49,6 +49,15 @@ class AuthorizationDeclined(AuthError):
     """The user denied the request, or the device code expired unused."""
 
 
+class SignInRequired(AuthError):
+    """A person must sign in; the message carries Microsoft's URL and code.
+
+    Raised only by the non-interactive mode the server uses. The tool call fails
+    at once with the code in its error, where a person can read it, and a later
+    call finishes the sign-in.
+    """
+
+
 def _post_form(url: str, data: dict) -> dict:
     """POST a form and return the parsed JSON body.
 
@@ -75,6 +84,12 @@ class DeviceCodeAuth:
     Prompts only when there is no usable refresh token. In practice that is once
     per app registration, because Microsoft's refresh tokens do not carry
     Google's 7-day testing-mode expiry.
+
+    `interactive=False` is for the MCP server. Its stdout goes to the client's
+    log, so a prompt there reaches nobody, and polling inside a tool call hangs
+    it for up to fifteen minutes. Instead the device code is saved beside the
+    token cache and raised as `SignInRequired`; each later call polls the token
+    endpoint once, and the first one after the person signs in succeeds.
     """
 
     def __init__(
@@ -84,6 +99,7 @@ class DeviceCodeAuth:
         cache_path: str | Path,
         *,
         prompt: Callable[[str], None] = print,
+        interactive: bool = True,
     ) -> None:
         self.client_id = client_id
         # offline_access is what makes Microsoft return a refresh token at all.
@@ -91,6 +107,8 @@ class DeviceCodeAuth:
         self.scopes = list(dict.fromkeys([*scopes, "offline_access"]))
         self.cache_path = Path(cache_path)
         self.prompt = prompt
+        self.interactive = interactive
+        self.pending_path = self.cache_path.with_name(self.cache_path.stem + ".pending.json")
 
     def access_token(self) -> str:
         tokens = self._load()
@@ -98,7 +116,7 @@ class DeviceCodeAuth:
             return tokens["access_token"]
         if tokens.get("refresh_token"):
             return self._save(self._refresh(tokens["refresh_token"]))["access_token"]
-        return self._save(self._device_flow())["access_token"]
+        return self._save(self._sign_in())["access_token"]
 
     def _refresh(self, refresh_token: str) -> dict:
         response = _post_form(
@@ -113,51 +131,92 @@ class DeviceCodeAuth:
         if "access_token" not in response:
             # An expired or revoked refresh token lands here. Fall back to a
             # fresh sign-in rather than failing the tool call.
-            return self._device_flow()
+            return self._sign_in()
         # Microsoft rotates the refresh token. Keep the old one if this response
         # omits it, but never assume the old one still works.
         response.setdefault("refresh_token", refresh_token)
         return response
 
-    def _device_flow(self) -> dict:
+    def _sign_in(self) -> dict:
+        return self._device_flow() if self.interactive else self._sign_in_once()
+
+    def _start_device_flow(self) -> dict:
         started = _post_form(
             DEVICECODE_URL, {"client_id": self.client_id, "scope": " ".join(self.scopes)}
         )
         if "device_code" not in started:
             raise AuthError(started.get("error_description") or str(started))
-
-        self.prompt(
-            started.get("message")
-            or f"Go to {started['verification_uri']} and enter the code {started['user_code']}"
+        started.setdefault(
+            "message",
+            f"Go to {started['verification_uri']} and enter the code {started['user_code']}",
         )
+        return started
+
+    def _poll(self, device_code: str) -> dict:
+        """One token request. Returns tokens, or the error code to wait on."""
+        response = _post_form(
+            TOKEN_URL,
+            {"grant_type": DEVICE_CODE_GRANT, "client_id": self.client_id, "device_code": device_code},
+        )
+        if "access_token" in response:
+            return response
+        error = response.get("error")
+        if error in ("authorization_pending", "slow_down"):
+            return {"pending": error}
+        if error in ("authorization_declined", "expired_token", "bad_verification_code"):
+            raise AuthorizationDeclined(response.get("error_description") or error)
+        raise AuthError(response.get("error_description") or str(response))
+
+    def _device_flow(self) -> dict:
+        started = self._start_device_flow()
+        self.prompt(started["message"])
 
         interval = int(started.get("interval", 5))
         deadline = time.time() + int(started.get("expires_in", 900))
         while time.time() < deadline:
-            response = _post_form(
-                TOKEN_URL,
-                {
-                    "grant_type": DEVICE_CODE_GRANT,
-                    "client_id": self.client_id,
-                    "device_code": started["device_code"],
-                },
-            )
+            response = self._poll(started["device_code"])
             if "access_token" in response:
                 return response
-
-            error = response.get("error")
-            if error == "authorization_pending":
-                time.sleep(interval)
-                continue
-            if error == "slow_down":
+            if response["pending"] == "slow_down":
                 interval += 5
-                time.sleep(interval)
-                continue
-            if error in ("authorization_declined", "expired_token", "bad_verification_code"):
-                raise AuthorizationDeclined(response.get("error_description") or error)
-            raise AuthError(response.get("error_description") or str(response))
+            time.sleep(interval)
 
         raise AuthorizationDeclined("the device code expired before sign-in completed")
+
+    def _sign_in_once(self) -> dict:
+        """The non-blocking half: poll a saved code once, or start one and raise."""
+        pending = self._load_pending()
+        if pending:
+            try:
+                response = self._poll(pending["device_code"])
+            except AuthError:
+                self.pending_path.unlink(missing_ok=True)
+                raise
+            if "access_token" in response:
+                self.pending_path.unlink(missing_ok=True)
+                return response
+            raise SignInRequired(pending["message"])
+
+        started = self._start_device_flow()
+        self._write_private(
+            self.pending_path,
+            {
+                "device_code": started["device_code"],
+                "message": started["message"],
+                "expires_at": time.time() + int(started.get("expires_in", 900)),
+            },
+        )
+        raise SignInRequired(started["message"])
+
+    def _load_pending(self) -> dict:
+        try:
+            pending = json.loads(self.pending_path.read_text())
+        except (OSError, ValueError):
+            return {}
+        if pending.get("expires_at", 0) <= time.time() or not pending.get("device_code"):
+            self.pending_path.unlink(missing_ok=True)
+            return {}
+        return pending
 
     def _load(self) -> dict:
         try:
@@ -171,11 +230,15 @@ class DeviceCodeAuth:
             "refresh_token": response.get("refresh_token", ""),
             "expires_at": time.time() + int(response.get("expires_in", 3599)),
         }
-        self.cache_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        os.chmod(self.cache_path.parent, 0o700)
+        self._write_private(self.cache_path, tokens)
+        return tokens
+
+    @staticmethod
+    def _write_private(path: Path, data: dict) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(path.parent, 0o700)
         # Create with 0600 rather than writing then chmod-ing: between those two
         # calls the token would sit on disk world-readable.
-        fd = os.open(self.cache_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as handle:
-            json.dump(tokens, handle)
-        return tokens
+            json.dump(data, handle)
