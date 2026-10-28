@@ -73,9 +73,9 @@ class FakeIMAP:
                 # Return only the named fields, as a server does -- wherever they
                 # sit in the header block.
                 msg = email.message_from_bytes(raw)
-                wanted = ("From", "Subject", "Date")
+                wanted = ("From", "Subject", "Date", "Message-ID")
                 block = "".join(f"{k}: {msg[k]}\r\n" for k in wanted if msg.get(k))
-                head = f"1 (UID {uid} BODY[HEADER.FIELDS (FROM SUBJECT DATE)] {{{len(block)}}}"
+                head = f"1 (UID {uid} BODY[HEADER.FIELDS (FROM SUBJECT DATE MESSAGE-ID)] {{{len(block)}}}"
                 parts.append((head.encode(), block.encode()))
             msg = email.message_from_bytes(raw)
             part1 = msg.get_payload(0) if msg.is_multipart() else msg

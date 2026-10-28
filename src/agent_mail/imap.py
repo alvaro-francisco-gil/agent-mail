@@ -36,7 +36,7 @@ SUPERSET_FOLDERS = ("[Gmail]/All Mail",)
 # spam-report block, so From, Subject and Date can sit several kilobytes in, and
 # the first version of this returned blank summaries for every message in that
 # mailbox. Naming the fields is also far less data.
-SUMMARY_FIELDS = "(FROM SUBJECT DATE)"
+SUMMARY_FIELDS = "(FROM SUBJECT DATE MESSAGE-ID)"
 
 # The snippet needs part 1's MIME header as well as its first bytes, because
 # BODY[1] arrives as transferred -- base64 without its Content-Transfer-Encoding

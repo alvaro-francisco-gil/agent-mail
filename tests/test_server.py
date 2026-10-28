@@ -82,7 +82,7 @@ def test_a_credential_file_missing_the_username_says_which_key(creds):
         server._mailbox("gmail")
 
 
-def test_every_tool_is_annotated_read_only():
+def test_every_mail_reading_tool_is_annotated_read_only():
     """The annotation is what a client shows a user before approving the tool."""
     for tool in (server.mail_list_recent, server.mail_search, server.mail_read):
         assert callable(tool)
