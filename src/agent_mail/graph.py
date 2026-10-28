@@ -27,7 +27,7 @@ MAX_PAGE = 1000
 
 # An explicit $select keeps pages small. The docs warn that returning hundreds
 # of messages with full payloads can trigger a gateway timeout (HTTP 504).
-SUMMARY_FIELDS = ("id", "subject", "from", "receivedDateTime", "bodyPreview")
+SUMMARY_FIELDS = ("id", "subject", "from", "receivedDateTime", "bodyPreview", "internetMessageId")
 FULL_FIELDS = (*SUMMARY_FIELDS, "body", "toRecipients", "ccRecipients")
 
 # Without this, Graph returns bodies as HTML. Plain text is what a model should

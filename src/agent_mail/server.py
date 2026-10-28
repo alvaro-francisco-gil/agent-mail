@@ -1,7 +1,9 @@
 """MCP server exposing a personal mailbox, read-only.
 
-Three tools, one shape of result, and no way to write. `account` selects the
-mailbox so a caller never has to know which provider is behind it.
+Three reading tools, one shape of result, and no way to write to a mailbox.
+`account` selects the mailbox so a caller never has to know which provider is
+behind it. A fourth tool, `mail_mark_handled`, writes only the local ledger of
+handled mail (ledger.py), never the mailbox.
 
 Written against mcp 2.x, where FastMCP is named MCPServer.
 
@@ -30,6 +32,7 @@ from mcp.types import ToolAnnotations
 
 from .graph import GraphMailbox
 from .imap import ImapMailbox
+from .ledger import OUTCOMES, Ledger
 from .oauth import DeviceCodeAuth
 from .tls import DONDOMINIO_MAIL_SHA256, assert_fingerprint, context_for
 
@@ -65,16 +68,28 @@ UNTRUSTED = (
 )
 
 READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=True)
+# Writes one line to a local file. Not read-only, and the annotation says so
+# rather than borrowing READ_ONLY's; it touches no mailbox and no network.
+LEDGER_WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=False,
+                               idempotent_hint=True, open_world_hint=False)
 
 mcp = MCPServer(
     name="agent-mail",
     instructions=(
         "Read-only access to the configured mailboxes. No tool here can send, "
-        "delete or modify mail." + UNTRUSTED
+        "delete or modify mail. Every summary carries `handled`: null, or how and "
+        "where an earlier session dealt with it. Call mail_mark_handled once a "
+        "message's fact is filed, it is acted on, or it is not worth keeping, so "
+        "no later session goes over it again; pass include_handled=false to see "
+        "only what is new." + UNTRUSTED
     ),
 )
 
 _mailboxes: dict[str, GraphMailbox | ImapMailbox] = {}
+
+# (account, id) -> Message-ID, for every message this process has returned, so
+# marking one just listed does not read it again to learn its Message-ID.
+_internet_ids: dict[tuple[str, str], str] = {}
 
 
 def _cache_dir() -> Path:
@@ -168,12 +183,39 @@ def _mailbox(account: str) -> GraphMailbox | ImapMailbox:
     )
 
 
+def _ledger() -> Ledger:
+    return Ledger(_cache_dir() / "handled.jsonl")
+
+
+def _rows(account: str, messages, include_handled: bool = True) -> list[dict]:
+    """Summaries as dicts, each with its ledger entry under `handled`.
+
+    Leaving handled mail out happens after the fetch, so a call can return fewer
+    than `limit`; raise `limit` to look further back.
+    """
+    ledger = _ledger()
+    rows = []
+    for m in messages:
+        _internet_ids[(account, m.id)] = m.internet_id
+        row = asdict(m)
+        row["handled"] = ledger.lookup(account, m.id, m.internet_id)
+        if include_handled or row["handled"] is None:
+            rows.append(row)
+    return rows
+
+
+INCLUDE_HANDLED = (
+    " Each result carries `handled`, null unless an earlier session marked it; "
+    "include_handled=false leaves those out, so fewer than `limit` can come back."
+)
+
+
 @mcp.tool(
-    description="List the most recent messages in a mailbox, newest first." + UNTRUSTED,
+    description="List the most recent messages in a mailbox, newest first." + INCLUDE_HANDLED + UNTRUSTED,
     annotations=READ_ONLY,
 )
-def mail_list_recent(account: str = "hotmail", limit: int = 20) -> list[dict]:
-    return [asdict(m) for m in _mailbox(account).list_recent(limit=limit)]
+def mail_list_recent(account: str = "hotmail", limit: int = 20, include_handled: bool = True) -> list[dict]:
+    return _rows(account, _mailbox(account).list_recent(limit=limit), include_handled)
 
 
 @mcp.tool(
@@ -181,12 +223,13 @@ def mail_list_recent(account: str = "hotmail", limit: int = 20) -> list[dict]:
         "Search a mailbox. The query matches senders, subjects and body text. "
         "Ordering depends on the provider: hotmail returns Graph's relevance "
         "order, while the IMAP accounts have no ranking and come back "
-        "newest-first." + UNTRUSTED
+        "newest-first." + INCLUDE_HANDLED + UNTRUSTED
     ),
     annotations=READ_ONLY,
 )
-def mail_search(query: str, account: str = "hotmail", limit: int = 20) -> list[dict]:
-    return [asdict(m) for m in _mailbox(account).search(query, limit=limit)]
+def mail_search(query: str, account: str = "hotmail", limit: int = 20,
+                include_handled: bool = True) -> list[dict]:
+    return _rows(account, _mailbox(account).search(query, limit=limit), include_handled)
 
 
 @mcp.tool(
@@ -197,7 +240,28 @@ def mail_search(query: str, account: str = "hotmail", limit: int = 20) -> list[d
     annotations=READ_ONLY,
 )
 def mail_read(message_id: str, account: str = "hotmail") -> dict:
-    return asdict(_mailbox(account).read(message_id))
+    return _rows(account, [_mailbox(account).read(message_id)])[0]
+
+
+@mcp.tool(
+    description=(
+        "Record that a message has been dealt with, so later sessions can skip it. "
+        f"outcome is one of: {', '.join(OUTCOMES)} -- filed (its fact is in a record), "
+        "acted (something was done about it), ignored (nothing worth keeping). "
+        "`where` is the file or URL the fact landed in; `note` is one line. "
+        "This writes a local file on this machine only; it never changes the mailbox."
+    ),
+    annotations=LEDGER_WRITE,
+)
+def mail_mark_handled(account: str, message_id: str, outcome: str,
+                      where: str = "", note: str = "") -> dict:
+    if outcome not in OUTCOMES:
+        raise ValueError(f"outcome must be one of: {', '.join(OUTCOMES)}")
+    internet_id = _internet_ids.get((account, message_id))
+    if internet_id is None:
+        internet_id = _mailbox(account).read(message_id).internet_id
+        _internet_ids[(account, message_id)] = internet_id
+    return _ledger().mark(account, message_id, internet_id, outcome, where=where, note=note)
 
 
 def main() -> None:

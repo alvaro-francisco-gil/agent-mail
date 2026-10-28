@@ -20,7 +20,9 @@ it:
 - `GraphMailbox` and `ImapMailbox` each have exactly three public methods, and a
   test asserts each surface is exactly `{list_recent, search, read}`. On the IMAP
   side **that test is the security control**, not a tidiness check.
-- Every tool is annotated `read_only_hint=True`.
+- Every mail-reading tool is annotated `read_only_hint=True`. The one other
+  tool, `mail_mark_handled`, writes only the local ledger below and says so in
+  its annotation.
 - Reading never mutates: every IMAP `SELECT` is readonly and every fetch uses
   `BODY.PEEK`, so nothing is marked `\Seen`.
 - If sending is ever added it arrives as its own module behind its own approval,
@@ -75,6 +77,25 @@ refresh tokens do not carry Google's seven-day testing-mode expiry.
 `~/.config/agent-mail/<account>.json`, created mode `0600` inside a `0700`
 directory, opened with those bits rather than chmod-ed afterwards. They are
 never written into any repository.
+
+## Handled mail
+
+The mailboxes cannot remember what a session dealt with (reading never sets
+`\Seen`), so the server does it locally: `~/.config/agent-mail/handled.jsonl`,
+mode `0600`, one line per decision, the latest winning.
+
+- Every summary, and `mail_read`, carries `handled`: `null`, or the outcome
+  (`filed` / `acted` / `ignored`), when, `where` the fact landed and a note.
+- `mail_mark_handled(account, message_id, outcome, where, note)` records one.
+- `include_handled=false` on `mail_list_recent` and `mail_search` leaves handled
+  mail out. It filters after the fetch, so fewer than `limit` can come back;
+  raise `limit` to look further back.
+
+A message matches on its provider id or its `Message-ID` header, within one
+account: provider ids change when a message moves folder, and one Message-ID can
+sit in two mailboxes. Entries hold ids and the caller's `where`/`note`, never a
+subject, sender or body. The file lives beside the tokens because this repo is
+public.
 
 ## Registering with an MCP client
 

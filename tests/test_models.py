@@ -84,3 +84,12 @@ def test_an_encoded_sender_name_is_decoded():
 def test_an_undecodable_header_is_passed_through_rather_than_raising():
     msg = _headers("Subject: =?bogus-charset?q?x?=\n\n")
     assert MessageSummary.from_imap(msg, "gmail", "i").subject
+
+
+def test_summaries_carry_the_message_id_header():
+    import email
+
+    """The ledger matches on it, because folder-scoped ids change on a move."""
+    msg = email.message_from_bytes(b"Message-ID: <abc@example.com>\r\nSubject: x\r\n\r\n")
+    assert MessageSummary.from_imap(msg, "gmail", "i").internet_id == "<abc@example.com>"
+    assert MessageSummary.from_graph({"internetMessageId": "<g@x>"}, "hotmail").internet_id == "<g@x>"

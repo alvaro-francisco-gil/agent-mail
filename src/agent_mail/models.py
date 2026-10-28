@@ -113,6 +113,9 @@ class MessageSummary:
     subject: str
     received: str
     snippet: str
+    # The RFC 5322 Message-ID. Unlike `id`, it survives a move between folders,
+    # which is why the handled-mail ledger matches on it as well.
+    internet_id: str = ""
 
     @classmethod
     def from_graph(cls, raw: dict, account: str) -> "MessageSummary":
@@ -125,6 +128,7 @@ class MessageSummary:
             subject=raw.get("subject") or "",
             received=raw.get("receivedDateTime") or "",
             snippet=raw.get("bodyPreview") or "",
+            internet_id=raw.get("internetMessageId") or "",
         )
 
     @classmethod
@@ -139,6 +143,7 @@ class MessageSummary:
             subject=_header_text(msg.get("Subject")),
             received=_imap_received(msg),
             snippet=snippet,
+            internet_id=str(msg.get("Message-ID") or "").strip(),
         )
 
 
