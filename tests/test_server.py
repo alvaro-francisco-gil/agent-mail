@@ -197,4 +197,3 @@ def test_an_unpinned_account_is_given_a_verifying_context(creds, monkeypatch):
     server._mailbox("gmail").list_recent()
     assert log["context"].verify_mode is ssl.CERT_REQUIRED
     assert log["context"].check_hostname is True
-
