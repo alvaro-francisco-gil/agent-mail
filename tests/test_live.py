@@ -30,7 +30,7 @@ import time
 import pytest
 
 from agent_mail import server
-from agent_mail.oauth import DeviceCodeAuth
+from agent_mail.oauth import DeviceCodeAuth, SignInRequired
 from agent_mail.graph import GraphMailbox
 from agent_mail.tls import DONDOMINIO_MAIL_SHA256, CertificateMismatch, context_for
 
@@ -209,22 +209,22 @@ def test_reading_does_not_mark_a_message_seen(imap_listing, imap_account):
 def test_hotmail_lists_and_reads_back():
     """Runs only on a cached token that still refreshes.
 
-    A dead refresh token makes DeviceCodeAuth fall back to the device-code flow,
-    which polls for up to fifteen minutes waiting for a person. Unattended, that is
-    a hang, so the prompt skips instead: re-authorise with the server, then rerun.
+    The server's own non-interactive auth is used, so a dead refresh token raises
+    SignInRequired instead of polling, and the test skips: run
+    `uv run agent-mail login hotmail`, then rerun.
     """
     client_id = os.environ.get("AGENT_MAIL_HOTMAIL_CLIENT_ID")
     cache = server._cache_dir() / "hotmail.json"
     if not client_id or not cache.exists():
         pytest.skip("needs AGENT_MAIL_HOTMAIL_CLIENT_ID and a cached hotmail token")
 
-    def needs_a_person(message):
-        pytest.skip("the hotmail refresh token no longer works; sign in again")
-
-    auth = DeviceCodeAuth(client_id, server.GRAPH_SCOPES, cache, prompt=needs_a_person)
+    auth = DeviceCodeAuth(client_id, server.GRAPH_SCOPES, cache, interactive=False)
     mailbox = GraphMailbox(auth, account="hotmail")
 
-    summaries, elapsed = _within_budget(lambda: mailbox.list_recent(limit=LIMIT))
+    try:
+        summaries, elapsed = _within_budget(lambda: mailbox.list_recent(limit=LIMIT))
+    except SignInRequired:
+        pytest.skip("the hotmail refresh token no longer works; run `uv run agent-mail login hotmail`")
 
     assert summaries, "the listing came back empty"
     blank = sum(1 for m in summaries if not (m.sender_address and m.received))

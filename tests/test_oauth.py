@@ -5,7 +5,8 @@ import time
 
 import pytest
 
-from agent_mail.oauth import AuthorizationDeclined, DeviceCodeAuth
+from agent_mail import oauth
+from agent_mail.oauth import AuthorizationDeclined, DeviceCodeAuth, SignInRequired
 
 
 def write_cache(path, **overrides):
@@ -129,3 +130,115 @@ def test_authority_matches_a_personal_accounts_only_registration():
     assert "/consumers/" in oauth.AUTHORITY
     assert oauth.DEVICECODE_URL.endswith("/devicecode")
     assert oauth.TOKEN_URL.endswith("/token")
+
+
+# --- the server's non-interactive mode ----------------------------------------
+# Under an MCP client nobody reads the server's stdout, so a sign-in that polls
+# inside the tool call is a fifteen-minute hang with the code shown to no one.
+# The server's auth raises the code instead, and finishes on a later call.
+
+STARTED = {"device_code": "dc", "user_code": "ABCD-EFGH", "interval": 5, "expires_in": 900,
+           "verification_uri": "https://microsoft.com/devicelogin",
+           "message": "To sign in, use https://microsoft.com/devicelogin and enter ABCD-EFGH."}
+
+
+def no_sleep(monkeypatch):
+    def refuse(seconds):
+        raise AssertionError("a non-interactive sign-in must never sleep")
+    monkeypatch.setattr("agent_mail.oauth.time.sleep", refuse)
+
+
+def test_a_missing_token_raises_the_code_without_polling(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr("agent_mail.oauth._post_form", lambda url, data: calls.append(data) or dict(STARTED))
+    no_sleep(monkeypatch)
+    auth = DeviceCodeAuth("cid", ["Mail.Read"], tmp_path / "hotmail.json", interactive=False)
+
+    with pytest.raises(SignInRequired) as raised:
+        auth.access_token()
+    assert "ABCD-EFGH" in str(raised.value)
+    assert "https://microsoft.com/devicelogin" in str(raised.value)
+    assert len(calls) == 1, "only the devicecode request, no token poll"
+
+
+def test_a_dead_refresh_token_raises_the_code_too(tmp_path, monkeypatch):
+    cache = write_cache(tmp_path / "hotmail.json", expires_at=time.time() - 1)
+    responses = [{"error": "invalid_grant"}, dict(STARTED)]
+    monkeypatch.setattr("agent_mail.oauth._post_form", lambda url, data: responses.pop(0))
+    no_sleep(monkeypatch)
+    with pytest.raises(SignInRequired, match="ABCD-EFGH"):
+        DeviceCodeAuth("cid", ["Mail.Read"], cache, interactive=False).access_token()
+
+
+def test_the_next_call_polls_once_and_repeats_the_same_code_while_pending(tmp_path, monkeypatch):
+    cache = tmp_path / "hotmail.json"
+    responses = [dict(STARTED), {"error": "authorization_pending"}]
+    calls = []
+
+    def fake_post(url, data):
+        calls.append(data)
+        return responses.pop(0)
+
+    monkeypatch.setattr("agent_mail.oauth._post_form", fake_post)
+    no_sleep(monkeypatch)
+    auth = DeviceCodeAuth("cid", ["Mail.Read"], cache, interactive=False)
+    with pytest.raises(SignInRequired):
+        auth.access_token()
+    with pytest.raises(SignInRequired, match="ABCD-EFGH"):
+        auth.access_token()
+    assert calls[1]["grant_type"] == "urn:ietf:params:oauth:grant-type:device_code"
+    assert calls[1]["device_code"] == "dc"
+
+
+def test_a_completed_sign_in_saves_tokens_and_clears_the_pending_code(tmp_path, monkeypatch):
+    cache = tmp_path / "hotmail.json"
+    responses = [dict(STARTED), {"access_token": "new", "refresh_token": "r1", "expires_in": 3599}]
+    monkeypatch.setattr("agent_mail.oauth._post_form", lambda url, data: responses.pop(0))
+    no_sleep(monkeypatch)
+    auth = DeviceCodeAuth("cid", ["Mail.Read"], cache, interactive=False)
+    with pytest.raises(SignInRequired):
+        auth.access_token()
+    assert auth.access_token() == "new"
+    assert json.loads(cache.read_text())["refresh_token"] == "r1"
+    assert not auth.pending_path.exists()
+
+
+def test_an_expired_pending_code_starts_a_new_sign_in(tmp_path, monkeypatch):
+    cache = tmp_path / "hotmail.json"
+    auth = DeviceCodeAuth("cid", ["Mail.Read"], cache, interactive=False)
+    auth.pending_path.write_text(json.dumps(
+        {"device_code": "old", "message": "old code", "interval": 5, "expires_at": time.time() - 1}))
+    calls = []
+
+    def fake_post(url, data):
+        calls.append(url)
+        return dict(STARTED)
+
+    monkeypatch.setattr("agent_mail.oauth._post_form", fake_post)
+    no_sleep(monkeypatch)
+    with pytest.raises(SignInRequired, match="ABCD-EFGH"):
+        auth.access_token()
+    assert calls == [oauth.DEVICECODE_URL]
+
+
+def test_a_declined_pending_code_raises_and_is_forgotten(tmp_path, monkeypatch):
+    cache = tmp_path / "hotmail.json"
+    responses = [dict(STARTED), {"error": "authorization_declined", "error_description": "no"}]
+    monkeypatch.setattr("agent_mail.oauth._post_form", lambda url, data: responses.pop(0))
+    no_sleep(monkeypatch)
+    auth = DeviceCodeAuth("cid", ["Mail.Read"], cache, interactive=False)
+    with pytest.raises(SignInRequired):
+        auth.access_token()
+    with pytest.raises(AuthorizationDeclined, match="no"):
+        auth.access_token()
+    assert not auth.pending_path.exists()
+
+
+def test_the_pending_code_is_not_world_readable(tmp_path, monkeypatch):
+    """A device code is half a sign-in: whoever completes it holds the mailbox."""
+    monkeypatch.setattr("agent_mail.oauth._post_form", lambda url, data: dict(STARTED))
+    auth = DeviceCodeAuth("cid", ["Mail.Read"], tmp_path / "nested" / "hotmail.json", interactive=False)
+    with pytest.raises(SignInRequired):
+        auth.access_token()
+    assert stat.S_IMODE(os.stat(auth.pending_path).st_mode) == 0o600
+    assert stat.S_IMODE(os.stat(auth.pending_path.parent).st_mode) == 0o700

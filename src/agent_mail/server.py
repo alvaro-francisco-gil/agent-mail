@@ -22,6 +22,7 @@ from __future__ import annotations
 import imaplib
 import json
 import os
+import sys
 from dataclasses import asdict
 from pathlib import Path
 
@@ -137,6 +138,18 @@ def _imap_mailbox(account: str, host: str, filename: str, pin: str | None) -> Im
     return ImapMailbox(connect, account=account)
 
 
+def _hotmail_auth(*, interactive: bool) -> DeviceCodeAuth:
+    client_id = os.environ.get("AGENT_MAIL_HOTMAIL_CLIENT_ID")
+    if not client_id:
+        raise ValueError(
+            "AGENT_MAIL_HOTMAIL_CLIENT_ID is not set. It is the Application "
+            "(client) ID of the Entra app registration; see README.md."
+        )
+    return DeviceCodeAuth(
+        client_id, GRAPH_SCOPES, _cache_dir() / "hotmail.json", interactive=interactive
+    )
+
+
 def _mailbox(account: str) -> GraphMailbox | ImapMailbox:
     """Resolve an account name to a mailbox, building it on first use.
 
@@ -148,14 +161,11 @@ def _mailbox(account: str) -> GraphMailbox | ImapMailbox:
         return _mailboxes[account]
 
     if account == "hotmail":
-        client_id = os.environ.get("AGENT_MAIL_HOTMAIL_CLIENT_ID")
-        if not client_id:
-            raise ValueError(
-                "AGENT_MAIL_HOTMAIL_CLIENT_ID is not set. It is the Application "
-                "(client) ID of the Entra app registration; see README.md."
-            )
-        auth = DeviceCodeAuth(client_id, GRAPH_SCOPES, _cache_dir() / "hotmail.json")
-        _mailboxes[account] = GraphMailbox(auth, account="hotmail")
+        # Non-interactive: a sign-in fails the tool call at once with the URL
+        # and code in its error, instead of polling for fifteen minutes behind a
+        # prompt printed to the client's log. `agent-mail login hotmail` is the
+        # blocking version for a terminal.
+        _mailboxes[account] = GraphMailbox(_hotmail_auth(interactive=False), account="hotmail")
         return _mailboxes[account]
 
     if account in IMAP_ACCOUNTS:
@@ -200,7 +210,21 @@ def mail_read(message_id: str, account: str = "hotmail") -> dict:
     return asdict(_mailbox(account).read(message_id))
 
 
-def main() -> None:
+def login(account: str) -> None:
+    """Sign in from a terminal, where the printed code reaches a person."""
+    if account != "hotmail":
+        raise SystemExit(f"only hotmail signs in; {account!r} uses a stored password")
+    _hotmail_auth(interactive=True).access_token()
+    print("hotmail is signed in.")
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = sys.argv[1:] if argv is None else argv
+    if args[:1] == ["login"]:
+        login(args[1] if len(args) > 1 else "hotmail")
+        return
+    if args:
+        raise SystemExit("usage: agent-mail [login [hotmail]]")
     mcp.run(transport="stdio")
 
 
