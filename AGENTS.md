@@ -1,7 +1,8 @@
 # AGENTS.md — agent-mail
 
 Read-only access to personal mailboxes, over MCP: Outlook/Hotmail through Microsoft
-Graph (`hotmail`), and three Gmail accounts (`gmail`, `cultuvilla-gmail`, `ordago-gmail`)
+Graph (`hotmail`), and four Gmail accounts (`gmail`, `cultuvilla-gmail`, `ordago-gmail`,
+`ghostaff-gmail`)
 and a DonDominio mailbox (`cultuvilla`) through IMAP. The repo is public; `README.md` is the full story, `PRIVACY.md` the policy.
 
 ## The promise: nothing here can send, delete or modify mail

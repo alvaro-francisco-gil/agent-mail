@@ -50,12 +50,13 @@ IMAP_PORT = 993
 # certificate that no CA can chain, so without it the only options were an
 # unverified connection or no connection -- see tls.py.
 #
-# Three Gmail accounts, one host: `gmail` is Álvaro's own, the other two belong
+# Four Gmail accounts, one host: `gmail` is Álvaro's own, the other three belong
 # to the projects. `cultuvilla` alone is the DonDominio mailbox.
 IMAP_ACCOUNTS = {
     "gmail": ("imap.gmail.com", "gmail.json", None),
     "cultuvilla-gmail": ("imap.gmail.com", "cultuvilla-gmail.json", None),
     "ordago-gmail": ("imap.gmail.com", "ordago-gmail.json", None),
+    "ghostaff-gmail": ("imap.gmail.com", "ghostaff-gmail.json", None),
     "cultuvilla": ("imap.cultuvilla.es", "cultuvilla.json", DONDOMINIO_MAIL_SHA256),
 }
 
