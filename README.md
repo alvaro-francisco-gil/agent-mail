@@ -10,7 +10,7 @@ differs by account, and the difference is the whole security story:
 
 | Account | What stops a write |
 |---|---|
-| `hotmail` | **the token.** Scopes are `Mail.Read` and `User.Read` — not `Mail.ReadWrite`, not `Mail.Send`. Microsoft would refuse a write |
+| `hotmail`, `kaf-hotmail` | **the token.** Scopes are `Mail.Read` and `User.Read` — not `Mail.ReadWrite`, not `Mail.Send`. Microsoft would refuse a write |
 | the IMAP accounts (`gmail`, `cultuvilla-gmail`, `ordago-gmail`, `ghostaff-gmail`, `cultuvilla`) | **the code.** The credential is a password that could send; there is simply no code path that does |
 
 That second row is weaker than the first and was accepted deliberately, because
@@ -67,6 +67,7 @@ Then:
 ```bash
 export AGENT_MAIL_HOTMAIL_CLIENT_ID=<the application client id>
 uv run agent-mail login hotmail   # prints a URL and a code, waits for the sign-in
+uv run agent-mail login kaf-hotmail  # a second Microsoft account, same app, own token
 uv run agent-mail                 # the MCP server
 ```
 
