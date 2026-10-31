@@ -8,7 +8,7 @@ from agent_mail.tls import DONDOMINIO_MAIL_SHA256, CertificateMismatch
 
 
 def test_unknown_account_names_the_valid_ones():
-    with pytest.raises(ValueError, match="hotmail, gmail, cultuvilla-gmail, ordago-gmail, ghostaff-gmail, cultuvilla"):
+    with pytest.raises(ValueError, match="hotmail, kaf-hotmail, gmail, cultuvilla-gmail, ordago-gmail, ghostaff-gmail, cultuvilla"):
         server._mailbox("outlook")
 
 
@@ -208,6 +208,19 @@ def test_hotmail_signs_in_without_blocking_the_tool_call(monkeypatch, tmp_path):
         assert server._mailbox("hotmail").auth.interactive is False
     finally:
         server._mailboxes.clear()
+
+
+def test_each_graph_account_keeps_its_own_token(monkeypatch, tmp_path):
+    """One client ID, two mailboxes: a shared cache file would read one as the other."""
+    monkeypatch.setenv("AGENT_MAIL_HOTMAIL_CLIENT_ID", "cid")
+    monkeypatch.setenv("AGENT_MAIL_CACHE_DIR", str(tmp_path))
+    server._mailboxes.clear()
+    try:
+        paths = {a: server._mailbox(a).auth.cache_path for a in server.GRAPH_ACCOUNTS}
+    finally:
+        server._mailboxes.clear()
+    assert paths["kaf-hotmail"] == tmp_path / "kaf-hotmail.json"
+    assert len(set(paths.values())) == len(paths)
 
 
 def test_login_hotmail_runs_the_interactive_sign_in(monkeypatch, tmp_path):
