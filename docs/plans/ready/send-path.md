@@ -1,7 +1,7 @@
 # Sending, over SMTP, behind approval and a cancel window
 
 **Priority:** medium
-**Gate:** none — the live transport tests landed 2026-10-15 (`tests/test_live.py`)
+**Gate:** none
 **Next:** as live tests in `tests/test_live.py`, connect, STARTTLS and authenticate
 against `smtp.gmail.com:587` and `mailsrv1.dondominio.com:587` **without sending
 anything** — not `smtp.cultuvilla.es`, which is not on DonDominio's SMTP
@@ -15,6 +15,10 @@ message approved by Álvaro at the harness prompt and then held briefly so he ca
 cancel it.
 
 ## Context
+
+The read-only live tests against the real mail servers landed 2026-10-15
+(`tests/test_live.py`); that file is where the SMTP handshake tests in Next go. It has
+no SMTP test yet.
 
 The policy is already decided and lives in the record repo, not here:
 [agent-mail-sends-with-approval.md](https://github.com/alvaro-francisco-gil/professional/blob/main/docs/decisions/agent-mail-sends-with-approval.md).
@@ -58,22 +62,25 @@ Three minutes. Long enough to catch an approval Álvaro regrets, short enough th
 mail is not mysteriously late. It exists because approval fatigue is the known
 failure mode of every confirm dialog.
 
-### What flushes the queue — settled by facts, 2026-09-30
+### What flushes the queue
 
-A systemd **user** timer, every minute. Checked on this machine rather than
-assumed:
+A systemd **user** timer, every minute. Settled 2026-09-30 on the old Windows + WSL
+desktop; re-checked 2026-10-31 on the native Omarchy Linux desktop it moved to on
+2026-10-30:
 
-- `/etc/wsl.conf` has `systemd=true` and `systemctl --user is-system-running`
-  reports `running`.
-- `Linger=yes` for the user, so the manager runs **without a login session** — the
-  timer fires whenever WSL is up, not only while a shell is open.
-- `~/.config/systemd/user/` is already how this machine runs services
-  (`openclaw-gateway`, `desktop-ram-alert`), so this follows a house pattern.
+- `systemctl --user is-system-running` reports `running`.
+- `loginctl show-user $USER -p Linger` reports `Linger=yes`, so the user manager is
+  started at boot and keeps running **without a login session**: the timer fires
+  whenever the machine is on, not only while a shell or the desktop session is open.
+- `~/.config/systemd/user/` already holds a user service (`voxtype.service`), so a
+  user unit is a pattern this machine uses. No timer is installed there yet.
 
-**The honest guarantee is therefore "at least three minutes, delivered when WSL is
-next running."** Mail queued while the machine is off sits until it comes back.
-That belongs in the README, because a message that leaves hours late is a surprise
-worth documenting rather than discovering.
+**The honest guarantee is therefore "no sooner than three minutes after queueing,
+and on the first timer tick while the machine is on."** Mail queued just before the
+machine is shut down or suspended sits in `outbox/` until it is next running, and then
+goes on the first tick. If lingering is ever turned off, the timer only runs while
+Álvaro is logged in. Both belong in the README: a message that leaves hours late is a
+surprise worth documenting rather than discovering.
 
 ### The log
 
@@ -100,7 +107,7 @@ third party's contact details applies to its own logs.
 |---|---|
 | `src/agent_mail/server.py` | `mail_send`, `mail_outbox`, `mail_cancel`; a `flush` CLI entry point |
 | `tests/test_server.py` | replace `test_no_tool_mentions_sending` — see below |
-| `README.md` | the promise section, the setup, and the WSL delivery caveat |
+| `README.md` | the promise section, the setup, and the delivery caveat (machine off or suspended; lingering) |
 | `pyproject.toml` | a console script for `agent-mail flush` / `outbox` / `cancel` |
 
 **Two existing tests change on purpose, and that is the point of listing them**
@@ -139,10 +146,12 @@ third party's contact details applies to its own logs.
 
 **Stage 4 — delivery and documentation**
 
-- [ ] Install the user timer; confirm it fires with `systemctl --user list-timers`
+- [ ] Install the user timer; confirm it fires with `systemctl --user list-timers`, and
+      that `Linger=yes` still holds
 - [ ] One real end-to-end send to Álvaro's own address, with his approval
-- [ ] README: the promise section, the WSL delivery caveat, and **never allowlist
-      `mail_send`**
+- [ ] README: the promise section, the delivery caveat (queued mail waits while the
+      machine is off or suspended; without lingering, while Álvaro is logged out), and
+      **never allowlist `mail_send`**
 
 ## Out of scope
 
