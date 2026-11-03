@@ -20,7 +20,7 @@ enforces the rest differs by account:
 
 ## Commands
 
-    uv run agent-mail     # run the MCP server (needs AGENT_MAIL_HOTMAIL_CLIENT_ID for hotmail)
+    uv run agent-mail     # run the MCP server (hotmail needs a client ID: hotmail-app.json, or AGENT_MAIL_HOTMAIL_CLIENT_ID)
     uv run pytest         # tests, fully mocked
     uv run pytest -m live # read-only, against the real servers; skips missing credentials
 

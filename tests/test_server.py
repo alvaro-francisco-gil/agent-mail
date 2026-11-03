@@ -12,11 +12,29 @@ def test_unknown_account_names_the_valid_ones():
         server._mailbox("outlook")
 
 
-def test_hotmail_without_a_client_id_says_which_variable(monkeypatch):
+def test_hotmail_without_a_client_id_says_which_variable(monkeypatch, tmp_path):
     monkeypatch.delenv("AGENT_MAIL_HOTMAIL_CLIENT_ID", raising=False)
+    monkeypatch.setenv("AGENT_MAIL_CACHE_DIR", str(tmp_path))
     server._mailboxes.clear()
     with pytest.raises(ValueError, match="AGENT_MAIL_HOTMAIL_CLIENT_ID"):
         server._mailbox("hotmail")
+
+
+def test_hotmail_client_id_comes_from_the_file_unless_the_environment_has_one(monkeypatch, tmp_path):
+    monkeypatch.delenv("AGENT_MAIL_HOTMAIL_CLIENT_ID", raising=False)
+    monkeypatch.setenv("AGENT_MAIL_CACHE_DIR", str(tmp_path))
+    (tmp_path / "hotmail-app.json").write_text('{"client_id": "from-file"}')
+    assert server._hotmail_client_id() == "from-file"
+    monkeypatch.setenv("AGENT_MAIL_HOTMAIL_CLIENT_ID", "from-env")
+    assert server._hotmail_client_id() == "from-env"
+
+
+def test_hotmail_client_id_file_that_is_not_json_says_so(monkeypatch, tmp_path):
+    monkeypatch.delenv("AGENT_MAIL_HOTMAIL_CLIENT_ID", raising=False)
+    monkeypatch.setenv("AGENT_MAIL_CACHE_DIR", str(tmp_path))
+    (tmp_path / "hotmail-app.json").write_text("nope")
+    with pytest.raises(ValueError, match="not valid JSON"):
+        server._hotmail_client_id()
 
 
 # --- the IMAP accounts ------------------------------------------------------

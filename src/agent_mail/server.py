@@ -7,10 +7,11 @@ it adds a new message to Drafts (drafts.py), for a person to review and send.
 
 Written against mcp 2.x, where FastMCP is named MCPServer.
 
-Configuration comes from the environment, because a client ID belongs in local
-config rather than in a repo:
+Configuration comes from the environment or that directory, because a client ID
+belongs in local config rather than in a repo:
 
-    AGENT_MAIL_HOTMAIL_CLIENT_ID   Application (client) ID of the Entra app
+    AGENT_MAIL_HOTMAIL_CLIENT_ID   Application (client) ID of the Entra app; without it,
+                                   `client_id` in hotmail-app.json in the cache directory
     AGENT_MAIL_CACHE_DIR           defaults to ~/.config/agent-mail
 
 The IMAP accounts take a username and password from a JSON file in that directory
@@ -178,13 +179,30 @@ def _imap_mailbox(account: str, host: str, filename: str, pin: str | None) -> Im
     return ImapMailbox(_imap_connect(host, username, password, pin), account=account)
 
 
-def _hotmail_auth(account: str = "hotmail", *, interactive: bool, drafts: bool = False) -> DeviceCodeAuth:
+def _hotmail_client_id() -> str:
+    """The environment wins; the file lets the server be registered without the ID."""
     client_id = os.environ.get("AGENT_MAIL_HOTMAIL_CLIENT_ID")
+    if client_id:
+        return client_id
+    path = _cache_dir() / "hotmail-app.json"
+    try:
+        client_id = json.loads(path.read_text(encoding="utf-8")).get("client_id")
+    except FileNotFoundError:
+        client_id = None
+    except json.JSONDecodeError as e:
+        raise ValueError(f"{path} is not valid JSON ({e})")
     if not client_id:
         raise ValueError(
-            "AGENT_MAIL_HOTMAIL_CLIENT_ID is not set. It is the Application "
-            "(client) ID of the Entra app registration; see README.md."
+            "AGENT_MAIL_HOTMAIL_CLIENT_ID is not set and "
+            f"{path} has no client_id. It is the Application (client) ID of the Entra app "
+            "registration; see README.md. Store it with:\n"
+            "  python3 ~/githubs/_workspace/scripts/store_secret.py agent-mail/hotmail-app.json client_id"
         )
+    return client_id
+
+
+def _hotmail_auth(account: str = "hotmail", *, interactive: bool, drafts: bool = False) -> DeviceCodeAuth:
+    client_id = _hotmail_client_id()
     scopes, filename = (GRAPH_DRAFT_SCOPES, GRAPH_DRAFT_ACCOUNTS[account]) if drafts else (GRAPH_SCOPES, GRAPH_ACCOUNTS[account])
     return DeviceCodeAuth(client_id, scopes, _cache_dir() / filename, interactive=interactive)
 

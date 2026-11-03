@@ -69,7 +69,7 @@ charged, and app registrations stay free after the trial ends.
 Then:
 
 ```bash
-export AGENT_MAIL_HOTMAIL_CLIENT_ID=<the application client id>
+python3 ~/githubs/_workspace/scripts/store_secret.py agent-mail/hotmail-app.json client_id
 uv run agent-mail login hotmail   # prints a URL and a code, waits for the sign-in
 uv run agent-mail login kaf-hotmail  # a second Microsoft account, same app, own token
 uv run agent-mail login hotmail --drafts  # the separate token drafts.py uses
@@ -116,15 +116,16 @@ public.
 
 ## Registering with an MCP client
 
-User scope, so it is available everywhere and no project advertises it:
+User scope, so it is available everywhere and no project advertises it. The workspace's
+`bootstrap.sh` does this on a new machine. `AGENT_MAIL_HOTMAIL_CLIENT_ID` in `env` overrides
+`hotmail-app.json`:
 
 ```json
 {
   "mcpServers": {
     "agent-mail": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/agent-mail", "agent-mail"],
-      "env": { "AGENT_MAIL_HOTMAIL_CLIENT_ID": "..." }
+      "args": ["run", "--directory", "/path/to/agent-mail", "agent-mail"]
     }
   }
 }
