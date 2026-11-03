@@ -54,6 +54,18 @@ enforces the rest differs by account:
 - Read the "Two things that look right and are not" section of `README.md` before
   changing `imap.py`.
 
+## Sibling repos
+
+Álvaro's own repos, side by side under `~/githubs`. Read one when a task needs it; edit it
+only under its own `AGENTS.md`.
+
+- `../professional` — who he is, his work and clients, money and tax, his dated obligations.
+- `../personal-data` — what apps recorded about him, answered through a read-only MCP server.
+- `../varo-vita` — the Varo Vita brand and its catalogue of what was published.
+- `../writing` — the workshop for his texts, whichever outlet they go to.
+- `../belongings` — the physical things he owns.
+- `../homelab` — his machines and services, hardware specs, and this workstation's setup.
+
 ## Plans
 
 Uses the agent-plans lifecycle v2: `docs/plans/{ideas,ready,ongoing}/`, `docs/decisions/`,
