@@ -6,8 +6,9 @@ https://learn.microsoft.com/en-us/graph/api/user-list-messages?view=graph-rest-1
 
 Note the permission: `Mail.Read`, not `Mail.ReadBasic`. ReadBasic is the
 least-privileged option and Microsoft recommends it, but it excludes message
-bodies, which is most of what this server is for. It is still read-only --
-`Mail.ReadWrite` and `Mail.Send` appear nowhere in this project.
+bodies, which is most of what this server is for. It is still read-only:
+`Mail.Send` appears nowhere in this project, and `Mail.ReadWrite` only on the
+separate token drafts.py uses.
 """
 
 from __future__ import annotations

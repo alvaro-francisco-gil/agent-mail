@@ -1,15 +1,18 @@
 # AGENTS.md — agent-mail
 
-Read-only access to personal mailboxes, over MCP: two Outlook/Hotmail accounts through
+Access to personal mailboxes over MCP, reading plus adding drafts: two Outlook/Hotmail accounts through
 Microsoft Graph (`hotmail`, `kaf-hotmail`), and four Gmail accounts (`gmail`, `cultuvilla-gmail`, `ordago-gmail`,
 `ghostaff-gmail`)
 and a DonDominio mailbox (`cultuvilla`) through IMAP. The repo is public; `README.md` is the full story, `PRIVACY.md` the policy.
 
-## The promise: nothing here can send, delete or modify mail
+## The promise: nothing here can send, delete or change existing mail
 
-What enforces it differs by account:
+The one write is `mail_draft`, which adds a new message to Drafts (`drafts.py`). What
+enforces the rest differs by account:
 
-- `hotmail`, `kaf-hotmail`: **the token.** Scopes are `Mail.Read` and `User.Read`; Microsoft refuses writes.
+- `hotmail`, `kaf-hotmail`: **the token** for every read: `Mail.Read` and `User.Read`;
+  Microsoft refuses writes. `hotmail` also has a separate `Mail.ReadWrite` token used only
+  by `drafts.py`; there the code is the limit. No token has `Mail.Send`.
 - the IMAP accounts: **the code.** The password could send; no code path does.
   `tests/test_graph.py` and `tests/test_imap.py` assert each mailbox's public surface is
   exactly `{list_recent, search, read}`. On the IMAP side that test *is* the security
@@ -30,9 +33,9 @@ What enforces it differs by account:
 
 ## Rules
 
-- Never add a public method to `GraphMailbox` or `ImapMailbox`, and never loosen the
-  surface tests. Sending, if added, arrives as its own module behind its own approval,
-  never as a method on a mailbox (`docs/plans/ready/send-path.md` is that work).
+- Never add a public method to `GraphMailbox` or `ImapMailbox`, or to the drafters beyond
+  `create`, and never loosen the surface tests. There is no send path, by decision: a
+  person reviews each draft and clicks send.
 - Every read tool keeps `read_only_hint=True`. `mail_mark_handled` is the one exception:
   it writes only `handled.jsonl` in the cache dir (`ledger.py`), never a mailbox, and no
   message content goes into it. Reading never mutates: IMAP `SELECT` is
