@@ -12,7 +12,7 @@ the difference is the whole security story:
 
 | Account | What stops a write |
 |---|---|
-| `hotmail`, `kaf-hotmail` | **the token.** Every read uses `Mail.Read` and `User.Read`, so Microsoft would refuse a write. `hotmail` has a second token, `hotmail-drafts.json`, with `Mail.ReadWrite` and used only by `drafts.py`. That scope could also change or delete mail, so there **the code** is what stops it. No token has `Mail.Send` |
+| `hotmail`, `kaf-hotmail` | **the token.** Every read uses `Mail.Read` and `User.Read`, so Microsoft would refuse a write. Each has a second token, `hotmail-drafts.json` and `kaf-hotmail-drafts.json`, with `Mail.ReadWrite` and used only by `drafts.py`. That scope could also change or delete mail, so there **the code** is what stops it. No token has `Mail.Send` |
 | the IMAP accounts (`gmail`, `cultuvilla-gmail`, `ordago-gmail`, `ghostaff-gmail`, `cultuvilla`) | **the code.** The credential is a password that could send; there is simply no code path that does |
 
 That second row is weaker than the first and was accepted deliberately, because
@@ -73,6 +73,7 @@ export AGENT_MAIL_HOTMAIL_CLIENT_ID=<the application client id>
 uv run agent-mail login hotmail   # prints a URL and a code, waits for the sign-in
 uv run agent-mail login kaf-hotmail  # a second Microsoft account, same app, own token
 uv run agent-mail login hotmail --drafts  # the separate token drafts.py uses
+uv run agent-mail login kaf-hotmail --drafts
 uv run agent-mail                 # the MCP server
 ```
 

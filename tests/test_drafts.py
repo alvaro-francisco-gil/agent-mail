@@ -111,21 +111,22 @@ def test_graph_that_does_not_make_a_draft_is_an_error():
         GraphDrafter(FakeAuth(), transport=lambda *a: {"isDraft": False}).create(Draft(["a@x.com"], "s", "b"))
 
 
-def test_reads_and_drafts_never_share_a_graph_token(tmp_path, monkeypatch):
+@pytest.mark.parametrize("account", ["hotmail", "kaf-hotmail"])
+def test_reads_and_drafts_never_share_a_graph_token(tmp_path, monkeypatch, account):
     monkeypatch.setenv("AGENT_MAIL_CACHE_DIR", str(tmp_path))
     monkeypatch.setenv("AGENT_MAIL_HOTMAIL_CLIENT_ID", "cid")
-    read = server._hotmail_auth("hotmail", interactive=False)
-    draft = server._hotmail_auth("hotmail", interactive=False, drafts=True)
+    read = server._hotmail_auth(account, interactive=False)
+    draft = server._hotmail_auth(account, interactive=False, drafts=True)
     assert read.cache_path != draft.cache_path
     assert not any("ReadWrite" in scope for scope in read.scopes)
     assert any("ReadWrite" in scope for scope in draft.scopes)
     assert not any("Send" in scope for scope in draft.scopes)
 
 
-def test_an_account_without_a_grant_cannot_draft():
+def test_an_unknown_account_cannot_draft():
     server._drafters.clear()
     with pytest.raises(ValueError, match="cannot hold drafts"):
-        server._drafter("kaf-hotmail")
+        server._drafter("nobody")
 
 
 def test_credentials_cannot_be_attached(tmp_path, monkeypatch):
