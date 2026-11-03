@@ -40,10 +40,10 @@ from .tls import DONDOMINIO_MAIL_SHA256, assert_fingerprint, context_for
 
 GRAPH_SCOPES = ["https://graph.microsoft.com/Mail.Read", "https://graph.microsoft.com/User.Read"]
 
-# A separate token for drafts, so the token every read uses cannot write. Only
-# `hotmail` has one: Álvaro granted it for that mailbox, 2026-11-03.
+# A separate token for drafts, so the token every read uses cannot write. Álvaro
+# granted it for both Microsoft mailboxes, 2026-11-03.
 GRAPH_DRAFT_SCOPES = ["https://graph.microsoft.com/Mail.ReadWrite"]
-GRAPH_DRAFT_ACCOUNTS = {"hotmail": "hotmail-drafts.json"}
+GRAPH_DRAFT_ACCOUNTS = {"hotmail": "hotmail-drafts.json", "kaf-hotmail": "kaf-hotmail-drafts.json"}
 
 # account -> token filename. One Entra app signs in both: it accepts any
 # personal Microsoft account. `kaf-hotmail` is Álvaro's older address, kept for

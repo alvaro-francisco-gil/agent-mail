@@ -11,7 +11,7 @@ The one write is `mail_draft`, which adds a new message to Drafts (`drafts.py`).
 enforces the rest differs by account:
 
 - `hotmail`, `kaf-hotmail`: **the token** for every read: `Mail.Read` and `User.Read`;
-  Microsoft refuses writes. `hotmail` also has a separate `Mail.ReadWrite` token used only
+  Microsoft refuses writes. Each also has a separate `Mail.ReadWrite` token used only
   by `drafts.py`; there the code is the limit. No token has `Mail.Send`.
 - the IMAP accounts: **the code.** The password could send; no code path does.
   `tests/test_graph.py` and `tests/test_imap.py` assert each mailbox's public surface is
