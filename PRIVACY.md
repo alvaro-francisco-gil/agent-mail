@@ -1,6 +1,6 @@
 # Privacy policy
 
-This policy covers the read-only personal-data tools in this repository and the
+This policy covers the personal-data tools in this repository and the
 applications registered to run them, including the LinkedIn application
 **`alvaro-professional-record`** (client id `78sxk1a1k51xr8`), registered under
 the EU Digital Markets Act to read its author's own LinkedIn data through the
@@ -48,15 +48,19 @@ None of them is ever committed to a repository.
 
 ## Read-only by construction
 
-These tools cannot write, send, delete or modify anything in the accounts they
-read. What enforces that depends on the account:
+These tools cannot send, delete or change existing mail in the accounts they read. The
+one write is `mail_draft`, which adds a new message to a mailbox's Drafts folder when the
+user asks for it, and the user reviews and sends it. What enforces the rest depends on the
+account:
 
 - **Outlook and LinkedIn: the provider.** The scopes issued are read-only (for Outlook,
-  `Mail.Read` and `User.Read`), so the provider refuses any write.
+  `Mail.Read` and `User.Read`), so the provider refuses any write. The exception is a
+  separate Outlook token with `Mail.ReadWrite`, used only to create drafts; for that token
+  the code is the limit.
 - **Gmail and the DonDominio mailbox: the code.** These are read over IMAP with an app
   password, which could send. No code path does: every folder is opened read-only,
   every fetch leaves messages unread, and tests pin each mailbox's public surface to
-  listing, searching and reading.
+  listing, searching and reading, and the separate draft module's to creating a draft.
 
 See [the reasoning](https://github.com/alvaro-francisco-gil/agent-mail).
 

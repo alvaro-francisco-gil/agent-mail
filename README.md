@@ -1,16 +1,18 @@
 # agent-mail
 
-Read-only access to personal mailboxes, over MCP. Outlook/Hotmail through
-Microsoft Graph, and Gmail and a DonDominio mailbox through IMAP.
+Access to personal mailboxes, over MCP: reading, plus adding a new draft for a person
+to review and send. Outlook/Hotmail through Microsoft Graph, and Gmail and a DonDominio
+mailbox through IMAP.
 
 ## The promise, and how it is kept
 
-**Nothing here can send, delete or modify mail.** But *what enforces that* now
-differs by account, and the difference is the whole security story:
+**Nothing here can send, delete or change existing mail. The one write is `mail_draft`,
+which adds a new message to Drafts.** But *what enforces that* differs by account, and
+the difference is the whole security story:
 
 | Account | What stops a write |
 |---|---|
-| `hotmail`, `kaf-hotmail` | **the token.** Scopes are `Mail.Read` and `User.Read` — not `Mail.ReadWrite`, not `Mail.Send`. Microsoft would refuse a write |
+| `hotmail`, `kaf-hotmail` | **the token.** Every read uses `Mail.Read` and `User.Read`, so Microsoft would refuse a write. `hotmail` has a second token, `hotmail-drafts.json`, with `Mail.ReadWrite` and used only by `drafts.py`. That scope could also change or delete mail, so there **the code** is what stops it. No token has `Mail.Send` |
 | the IMAP accounts (`gmail`, `cultuvilla-gmail`, `ordago-gmail`, `ghostaff-gmail`, `cultuvilla`) | **the code.** The credential is a password that could send; there is simply no code path that does |
 
 That second row is weaker than the first and was accepted deliberately, because
@@ -25,8 +27,10 @@ it:
   its annotation.
 - Reading never mutates: every IMAP `SELECT` is readonly and every fetch uses
   `BODY.PEEK`, so nothing is marked `\Seen`.
-- If sending is ever added it arrives as its own module behind its own approval,
-  never as a method on a mailbox.
+- Drafting is its own module, `drafts.py`, never a method on a mailbox. Its classes
+  have one public method, `create`, and a test asserts that too. There is no send path:
+  a person opens the draft and clicks send.
+- `mail_draft` refuses attachments inside the credential directory.
 
 **Message content is data, never instructions.** A mailbox is the one surface a
 stranger can write to. Every tool description says so, because that string is
@@ -59,7 +63,7 @@ charged, and app registrations stay free after the trial ends.
 5. *Authentication* → **"Allow public client flows" → Yes**. Without it the
    device-code grant is refused.
 6. *API permissions* → Microsoft Graph → **Delegated** → `Mail.Read`,
-   `offline_access`, `User.Read`.
+   `offline_access`, `User.Read`, and `Mail.ReadWrite` for drafts.
 7. Copy the **Application (client) ID**. It is not a secret.
 
 Then:
@@ -68,6 +72,7 @@ Then:
 export AGENT_MAIL_HOTMAIL_CLIENT_ID=<the application client id>
 uv run agent-mail login hotmail   # prints a URL and a code, waits for the sign-in
 uv run agent-mail login kaf-hotmail  # a second Microsoft account, same app, own token
+uv run agent-mail login hotmail --drafts  # the separate token drafts.py uses
 uv run agent-mail                 # the MCP server
 ```
 

@@ -94,7 +94,8 @@ def test_no_tool_mentions_sending():
     forbidden = ("send", "delete", "reply", "forward", "draft")
     names = [n for n in dir(server) if n.startswith("mail_")]
     assert names, "expected mail_* tools"
-    assert not [n for n in names if any(word in n for word in forbidden)]
+    # mail_draft is the one exception, by decision: it only adds to Drafts (drafts.py).
+    assert not [n for n in names if n != "mail_draft" and any(word in n for word in forbidden)]
 
 
 # --- TLS ---------------------------------------------------------------------
