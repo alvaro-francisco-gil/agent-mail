@@ -18,7 +18,7 @@ import urllib.parse
 import urllib.request
 from typing import Callable, Iterable
 
-from .models import Message, MessageSummary
+from .models import Attachment, Message, MessageSummary
 
 BASE = "https://graph.microsoft.com/v1.0"
 
@@ -29,7 +29,9 @@ MAX_PAGE = 1000
 # An explicit $select keeps pages small. The docs warn that returning hundreds
 # of messages with full payloads can trigger a gateway timeout (HTTP 504).
 SUMMARY_FIELDS = ("id", "subject", "from", "receivedDateTime", "bodyPreview", "internetMessageId")
-FULL_FIELDS = (*SUMMARY_FIELDS, "body", "toRecipients", "ccRecipients")
+FULL_FIELDS = (*SUMMARY_FIELDS, "body", "toRecipients", "ccRecipients", "hasAttachments")
+# Named so that a listing never carries the contentBytes of every file.
+ATTACHMENT_FIELDS = ("id", "name", "contentType", "size", "isInline")
 
 # Without this, Graph returns bodies as HTML. Plain text is what a model should
 # be reading, and it is a request header rather than a query parameter.
@@ -79,7 +81,13 @@ class GraphMailbox:
     def read(self, message_id: str) -> Message:
         url = self._url(f"/me/messages/{urllib.parse.quote(message_id)}", select=FULL_FIELDS)
         raw = self.transport(url, self._headers(prefer_text=True))
-        return Message.from_graph(raw, self.account)
+        attachments: tuple[Attachment, ...] = ()
+        # Graph answers false when a message holds only inline parts, so a
+        # signature logo costs no second request and does not get listed.
+        if raw.get("hasAttachments"):
+            url = self._url(f"/me/messages/{urllib.parse.quote(message_id)}/attachments", select=ATTACHMENT_FIELDS)
+            attachments = tuple(Attachment.from_graph(item) for item in self._pages(url, MAX_PAGE))
+        return Message.from_graph(raw, self.account, attachments)
 
     def _url(
         self,

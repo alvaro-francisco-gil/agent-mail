@@ -30,6 +30,7 @@ import time
 import pytest
 
 from agent_mail import server
+from agent_mail.attachments import MAX_ATTACHMENT_BYTES, GraphAttachments, ImapAttachments
 from agent_mail.oauth import DeviceCodeAuth, SignInRequired
 from agent_mail.graph import GraphMailbox
 from agent_mail.tls import DONDOMINIO_MAIL_SHA256, CertificateMismatch, context_for
@@ -43,6 +44,9 @@ LIMIT = 20
 # code. Reads get no budget: one Gmail read-back measured 2 s, then 42 s, with
 # no change in code and no relation to message size.
 LISTING_BUDGET_SECONDS = 15
+
+# How far back to look for a message with an attachment.
+ATTACHMENT_SCAN = 8
 
 # Same length as the real pin, and not it.
 WRONG_PIN = ":".join(["00"] * 32)
@@ -231,3 +235,73 @@ def test_hotmail_lists_and_reads_back():
     assert blank == 0, f"{blank} of {len(summaries)} summaries lack a sender or date"
     assert elapsed < LISTING_BUDGET_SECONDS, f"listing {LIMIT} took {elapsed:.1f}s"
     assert mailbox.read(summaries[0].id).id == summaries[0].id
+
+
+# -- attachments --------------------------------------------------------------
+# A fake cannot say whether Graph honours $select on a polymorphic collection or
+# whether a server's MIME looks like ours, so the bytes are checked here. Fetched
+# into memory only: nothing is written to disk.
+
+
+@pytest.fixture(scope="module")
+def imap_attachment(imap_listing):
+    """One attachment per account, shared, because a Gmail read can take 40 s."""
+    mailbox, summaries, _ = imap_listing
+    for summary in summaries[:ATTACHMENT_SCAN]:
+        listed = mailbox.read(summary.id).attachments
+        if listed:
+            return mailbox, summary.id, listed[0]
+    pytest.skip(f"no attachment among the newest {ATTACHMENT_SCAN} messages")
+
+
+def test_an_imap_attachment_fetches_at_its_listed_size(imap_attachment):
+    mailbox, message_id, attachment = imap_attachment
+    file = ImapAttachments(mailbox._connect).fetch(message_id, attachment.id)
+    assert len(file.content) == attachment.size
+    assert file.content, "the attachment came back empty"
+
+
+def test_fetching_an_imap_attachment_does_not_mark_a_message_seen(imap_attachment):
+    mailbox, message_id, attachment = imap_attachment
+    folder, _, uid = message_id.rsplit(":", 2)
+
+    def flags():
+        conn = mailbox._connect()
+        try:
+            conn.select(f'"{folder}"', readonly=True)
+            typ, data = conn.uid("FETCH", uid, "(FLAGS)")
+            return b" ".join(d for d in data if isinstance(d, bytes))
+        finally:
+            conn.logout()
+
+    before = flags()
+    ImapAttachments(mailbox._connect).fetch(message_id, attachment.id)
+    assert flags() == before
+
+
+def test_a_hotmail_attachment_lists_and_downloads():
+    if not (server._cache_dir() / "hotmail.json").exists():
+        pytest.skip("needs a cached hotmail token")
+    try:
+        client_id = server._hotmail_client_id()
+    except ValueError:
+        pytest.skip("needs the hotmail client ID")
+    auth = DeviceCodeAuth(client_id, server.GRAPH_SCOPES, server._cache_dir() / "hotmail.json", interactive=False)
+    mailbox = GraphMailbox(auth, account="hotmail")
+    try:
+        summaries = mailbox.search("hasAttachments:true", limit=LIMIT)
+    except SignInRequired:
+        pytest.skip("the hotmail refresh token no longer works; run `uv run agent-mail login hotmail`")
+    files = 0
+    for summary in summaries:
+        for attachment in mailbox.read(summary.id).attachments:
+            assert attachment.id and attachment.name, "an attachment came back unnamed"
+            if attachment.link or attachment.size > MAX_ATTACHMENT_BYTES:
+                continue
+            file = GraphAttachments(auth).fetch(summary.id, attachment.id)
+            assert file.content, "the attachment came back empty"
+            files += 1
+            if files == 3:
+                return
+    if not files:
+        pytest.skip("no downloadable attachment found in hotmail")
