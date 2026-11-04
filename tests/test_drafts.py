@@ -50,6 +50,12 @@ def test_mime_carries_recipients_and_the_attachment(tmp_path):
     assert (attachment.get_filename(), attachment.get_content()) == ("invoice.pdf", b"%PDF-1")
 
 
+def test_mime_carries_bcc_and_leaves_the_visible_recipients_alone():
+    raw = build_mime(Draft(["me@x.com"], "s", "b", bcc=["a@x.com", "b@x.com"]), "me@x.com")
+    parsed = email.message_from_bytes(raw, policy=policy.default)
+    assert (parsed["To"], parsed["Cc"], parsed["Bcc"]) == ("me@x.com", None, "a@x.com, b@x.com")
+
+
 def test_a_newline_in_a_header_is_refused():
     with pytest.raises(ValueError):
         build_mime(Draft(["a@x.com"], "x\r\nBcc: evil@x.com", "b"), "me@x.com")
@@ -96,6 +102,7 @@ def test_graph_posts_a_draft_with_its_attachment(tmp_path):
     assert seen["url"].endswith("/me/messages")
     assert seen["headers"]["Authorization"] == "Bearer tok"
     assert seen["payload"]["toRecipients"] == [{"emailAddress": {"address": "a@x.com"}}]
+    assert seen["payload"]["bccRecipients"] == []
     assert seen["payload"]["attachments"][0]["contentBytes"] == "JVBERi0x"
 
 
