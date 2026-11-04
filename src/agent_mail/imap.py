@@ -183,6 +183,27 @@ def _snippet(mime_header: bytes | None, body: bytes | None) -> str:
     return re.sub(r"\s+", " ", text).strip()[:SNIPPET_CHARS]
 
 
+def _message_bytes(connect: Callable[[], object], message_id: str) -> bytes:
+    """One whole message by id, readonly and with PEEK. attachments.py reads through
+    this too, so there is one path to a message and it cannot mark anything."""
+    folder, uidvalidity, uid = decode_id(message_id)
+    conn = connect()
+    try:
+        live = _uidvalidity(conn, folder)
+        if live != uidvalidity:
+            raise StaleMessageId(
+                f"{folder} was renumbered since this id was issued "
+                f"(UIDVALIDITY was {uidvalidity}, is now {live}); search again"
+            )
+        conn.select(_quote(folder), readonly=True)
+        raw = _fetch(conn, uid, "(UID BODY.PEEK[])")
+        if raw is None:
+            raise ValueError(f"no message {uid} in {folder}")
+        return raw
+    finally:
+        ImapMailbox._close(conn)
+
+
 class ImapMailbox:
     """The three read operations, and nothing else.
 
@@ -217,22 +238,8 @@ class ImapMailbox:
         return self._summaries(("TEXT", _quote(query)), limit)
 
     def read(self, message_id: str) -> Message:
-        folder, uidvalidity, uid = decode_id(message_id)
-        conn = self._connect()
-        try:
-            live = _uidvalidity(conn, folder)
-            if live != uidvalidity:
-                raise StaleMessageId(
-                    f"{folder} was renumbered since this id was issued "
-                    f"(UIDVALIDITY was {uidvalidity}, is now {live}); search again"
-                )
-            conn.select(_quote(folder), readonly=True)
-            raw = _fetch(conn, uid, "(UID BODY.PEEK[])")
-            if raw is None:
-                raise ValueError(f"no message {uid} in {folder}")
-            return Message.from_imap(email.message_from_bytes(raw), self.account, message_id)
-        finally:
-            self._close(conn)
+        raw = _message_bytes(self._connect, message_id)
+        return Message.from_imap(email.message_from_bytes(raw), self.account, message_id)
 
     # -- internals -----------------------------------------------------------
 

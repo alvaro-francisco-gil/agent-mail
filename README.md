@@ -22,9 +22,9 @@ it:
 - `GraphMailbox` and `ImapMailbox` each have exactly three public methods, and a
   test asserts each surface is exactly `{list_recent, search, read}`. On the IMAP
   side **that test is the security control**, not a tidiness check.
-- Every mail-reading tool is annotated `read_only_hint=True`. The one other
-  tool, `mail_mark_handled`, writes only the local ledger below and says so in
-  its annotation.
+- Every mail-reading tool is annotated `read_only_hint=True`. `mail_mark_handled`
+  writes only the local ledger below and `mail_save_attachment` only the local
+  folder below, and each says so in its annotation.
 - Reading never mutates: every IMAP `SELECT` is readonly and every fetch uses
   `BODY.PEEK`, so nothing is marked `\Seen`.
 - Drafting is its own module, `drafts.py`, never a method on a mailbox. Its classes
@@ -113,6 +113,29 @@ account: provider ids change when a message moves folder, and one Message-ID can
 sit in two mailboxes. Entries hold ids and the caller's `where`/`note`, never a
 subject, sender or body. The file lives beside the tokens because this repo is
 public.
+
+## Attachments
+
+`mail_read` lists a message's attachments: `id`, `name`, `content_type`, `size`,
+`inline` and `link`. `mail_save_attachment(account, message_id, attachment_id)` saves
+one and returns its path, for reading with ordinary file tools. Listings and searches
+do not say whether a message has any: on IMAP that would cost every row another fetch.
+
+- It reads the way a read does. The Graph half uses the `Mail.Read` token, and the
+  IMAP half opens the folder readonly and fetches with `BODY.PEEK`, so the mailbox
+  does not change. `attachments.py` is its own module; a test asserts each reader has one
+  public method, `fetch`.
+- Files go to `~/.cache/agent-mail/attachments/<hash>/<name>` (`$XDG_CACHE_HOME` is
+  honoured), `0600` in `0700` folders, and are deleted after 30 days, when the next
+  save runs. Copy one worth keeping into the repo it belongs to. They sit outside
+  the credential directory, so a saved file can go on a draft.
+- A sender chooses the filename, so directories and control characters are stripped
+  from it first. The content is data, like any message body, and is never made executable.
+- Over 30 MB is refused; on the Graph side, before the download.
+- A cloud link stays a link. Graph lists one with `link: true` and the tool refuses
+  it; on IMAP a Drive or OneDrive link is just text in the body. An inline-only message
+  lists nothing on the Graph side, where `hasAttachments` is false, but IMAP
+  lists its images with `inline: true`.
 
 ## Registering with an MCP client
 

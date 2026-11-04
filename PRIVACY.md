@@ -6,7 +6,7 @@ applications registered to run them, including the LinkedIn application
 the EU Digital Markets Act to read its author's own LinkedIn data through the
 Member Data Portability API.
 
-**Last updated:** 2026-09-30
+**Last updated:** 2026-11-04
 
 ## Who this is for
 
@@ -21,7 +21,8 @@ categories that account holder selects at the time:
 
 - From LinkedIn: his own posts, articles, comments and reposts, as returned by
   the Member Data Portability API.
-- From a mailbox: message metadata and content, read on demand.
+- From a mailbox: message metadata and content, read on demand, and an attachment
+  when one is asked for.
 
 **No data about any other person is collected as a subject of this processing.**
 Where his own data unavoidably names other people — a post that mentions someone,
@@ -74,7 +75,8 @@ application can read nothing.
 ## Retention and deletion
 
 Data is retained for as long as the author finds it useful and is deleted by
-deleting the files. There is no server, no database and no backup held by anyone
+deleting the files. A saved mail attachment stays in a private folder on the author's
+machine and is deleted after 30 days unless he files it elsewhere. There is no server, no database and no backup held by anyone
 else.
 
 ## Contact

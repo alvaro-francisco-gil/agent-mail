@@ -17,6 +17,7 @@ from __future__ import annotations
 import email.header
 import email.utils
 import html
+import mimetypes
 import re
 from dataclasses import dataclass
 from datetime import timezone
@@ -96,6 +97,91 @@ def imap_body_text(msg: EmailMessage) -> str:
     return _strip_html(body) if msg.get_content_type() == "text/html" else body.strip()
 
 
+@dataclass(frozen=True)
+class Attachment:
+    """What a message says it carries; the bytes come from attachments.py."""
+
+    id: str
+    name: str
+    content_type: str
+    size: int
+    # Part of the message's layout, usually a logo. Some mailers mark real files
+    # inline too, so it is listed all the same.
+    inline: bool = False
+    # A cloud link rather than a file: the bytes are not in the mailbox.
+    link: bool = False
+
+    @classmethod
+    def from_graph(cls, raw: dict) -> "Attachment":
+        kind = raw.get("@odata.type") or ""
+        name = raw.get("name") or ""
+        content_type = raw.get("contentType") or ""
+        # An attached message or event. Graph names it after its subject and gives
+        # no type, and its raw form is what a saved file holds.
+        if kind.endswith("itemAttachment"):
+            content_type = content_type or "message/rfc822"
+            name = name if name.lower().endswith(".eml") else f"{name}.eml"
+        return cls(
+            id=raw.get("id") or "",
+            name=name,
+            content_type=content_type or "application/octet-stream",
+            size=raw.get("size") or 0,
+            inline=bool(raw.get("isInline")),
+            link=kind.endswith("referenceAttachment"),
+        )
+
+
+def _imap_parts(msg: EmailMessage):
+    """Every leaf of the MIME tree. An attached message counts as one leaf, where
+    walk() would descend and list its attachments as this message's own."""
+    if msg.get_content_type() != "message/rfc822" and msg.is_multipart():
+        for part in msg.get_payload():
+            yield from _imap_parts(part)
+    else:
+        yield msg
+
+
+def _is_imap_attachment(part: EmailMessage) -> bool:
+    """A named part, one marked as an attachment, or a nameless part of a type that
+    is never body text. The types are listed because a bounce's
+    message/delivery-status is not a file."""
+    return bool(part.get_filename() or part.get_content_disposition() == "attachment") or (
+        part.get_content_type() == "message/rfc822"
+        or part.get_content_maintype() in ("application", "image", "audio", "video")
+    )
+
+
+def _imap_part_bytes(part: EmailMessage) -> bytes:
+    if part.get_content_type() == "message/rfc822" and part.is_multipart():
+        return part.get_payload(0).as_bytes()
+    return part.get_payload(decode=True) or b""
+
+
+def imap_attachments(msg: EmailMessage) -> list[tuple[Attachment, bytes]]:
+    """Each attachment with its bytes. An id is the position in the message, which
+    cannot change: a stored message is immutable."""
+    found = []
+    for part in _imap_parts(msg):
+        if not _is_imap_attachment(part):
+            continue
+        number = str(len(found) + 1)
+        content_type = part.get_content_type()
+        disposition = part.get_content_disposition()
+        content = _imap_part_bytes(part)
+        found.append((
+            Attachment(
+                id=number,
+                name=_header_text(part.get_filename())
+                or f"attachment-{number}{mimetypes.guess_extension(content_type) or ''}",
+                content_type=content_type,
+                size=len(content),
+                inline=disposition == "inline" or (disposition is None and bool(part.get("Content-ID"))),
+            ),
+            content,
+        ))
+    return found
+
+
 def _graph_sender(raw: dict) -> dict:
     """Graph sends `from` as an object, as an explicit null, or not at all."""
     sender = raw.get("from") or raw.get("sender") or {}
@@ -157,17 +243,23 @@ class Message(MessageSummary):
     """
 
     body_text: str = ""
+    attachments: tuple[Attachment, ...] = ()
 
     @classmethod
-    def from_graph(cls, raw: dict, account: str) -> "Message":
+    def from_graph(cls, raw: dict, account: str, attachments: tuple[Attachment, ...] = ()) -> "Message":
         summary = MessageSummary.from_graph(raw, account)
         body = raw.get("body") or {}
         return cls(
             **summary.__dict__,
             body_text=(body.get("content") or "") if isinstance(body, dict) else "",
+            attachments=attachments,
         )
 
     @classmethod
     def from_imap(cls, msg: EmailMessage, account: str, message_id: str) -> "Message":
         summary = MessageSummary.from_imap(msg, account, message_id)
-        return cls(**summary.__dict__, body_text=imap_body_text(msg))
+        return cls(
+            **summary.__dict__,
+            body_text=imap_body_text(msg),
+            attachments=tuple(attachment for attachment, _ in imap_attachments(msg)),
+        )
