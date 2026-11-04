@@ -43,6 +43,7 @@ class Draft:
     body: str
     cc: list[str] = field(default_factory=list)
     attachments: list[Path] = field(default_factory=list)
+    bcc: list[str] = field(default_factory=list)
 
 
 def _content_type(path: Path) -> str:
@@ -56,6 +57,8 @@ def build_mime(draft: Draft, sender: str) -> bytes:
     message["To"] = ", ".join(draft.to)
     if draft.cc:
         message["Cc"] = ", ".join(draft.cc)
+    if draft.bcc:
+        message["Bcc"] = ", ".join(draft.bcc)
     message["Subject"] = draft.subject
     message["Date"] = formatdate(localtime=True)
     message["Message-ID"] = make_msgid(domain=sender.rpartition("@")[2] or None)
@@ -90,6 +93,7 @@ class GraphDrafter:
             "body": {"contentType": "Text", "content": draft.body},
             "toRecipients": _recipients(draft.to),
             "ccRecipients": _recipients(draft.cc),
+            "bccRecipients": _recipients(draft.bcc),
             "attachments": [
                 {
                     "@odata.type": "#microsoft.graph.fileAttachment",

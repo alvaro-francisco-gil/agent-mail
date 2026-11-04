@@ -13,7 +13,7 @@ the difference is the whole security story:
 | Account | What stops a write |
 |---|---|
 | `hotmail`, `kaf-hotmail` | **the token.** Every read uses `Mail.Read` and `User.Read`, so Microsoft would refuse a write. Each has a second token, `hotmail-drafts.json` and `kaf-hotmail-drafts.json`, with `Mail.ReadWrite` and used only by `drafts.py`. That scope could also change or delete mail, so there **the code** is what stops it. No token has `Mail.Send` |
-| the IMAP accounts (`gmail`, `cultuvilla-gmail`, `ordago-gmail`, `ghostaff-gmail`, `cultuvilla`) | **the code.** The credential is a password that could send; there is simply no code path that does |
+| the IMAP accounts (`gmail`, `cultuvilla-gmail`, `ordago-gmail`, `ghostaff-gmail`, `anduela-gmail`, `cultuvilla`) | **the code.** The credential is a password that could send; there is simply no code path that does |
 
 That second row is weaker than the first and was accepted deliberately, because
 neither provider will issue a read-only credential worth having. What follows from
@@ -212,6 +212,7 @@ Each account reads one JSON file from the cache directory:
 | `cultuvilla-gmail` | `imap.gmail.com:993` | `cultuvilla-gmail.json` | the full address |
 | `ordago-gmail` | `imap.gmail.com:993` | `ordago-gmail.json` | the full address |
 | `ghostaff-gmail` | `imap.gmail.com:993` | `ghostaff-gmail.json` | the full address |
+| `anduela-gmail` | `imap.gmail.com:993` | `anduela-gmail.json` | the full address |
 | `cultuvilla` | `imap.cultuvilla.es:993` | `cultuvilla.json` | the full address |
 
 Either `password` or `app_password` is accepted as the key, so the file written for

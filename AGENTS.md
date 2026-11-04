@@ -1,8 +1,8 @@
 # AGENTS.md — agent-mail
 
 Access to personal mailboxes over MCP, reading plus adding drafts: two Outlook/Hotmail accounts through
-Microsoft Graph (`hotmail`, `kaf-hotmail`), and four Gmail accounts (`gmail`, `cultuvilla-gmail`, `ordago-gmail`,
-`ghostaff-gmail`)
+Microsoft Graph (`hotmail`, `kaf-hotmail`), and five Gmail accounts (`gmail`, `cultuvilla-gmail`, `ordago-gmail`,
+`ghostaff-gmail`, `anduela-gmail`)
 and a DonDominio mailbox (`cultuvilla`) through IMAP. The repo is public; `README.md` is the full story, `PRIVACY.md` the policy.
 
 ## The promise: nothing here can send, delete or change existing mail
