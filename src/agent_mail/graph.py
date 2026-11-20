@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import urllib.parse
 import urllib.request
+from datetime import date
 from typing import Callable, Iterable
 
 from .models import Attachment, Message, MessageSummary
@@ -44,6 +45,27 @@ def _get_json(url: str, headers: dict) -> dict:
         return json.load(response)
 
 
+def _kql(query: str, since: date | None, before: date | None) -> str:
+    """The $search value: one double-quoted KQL string.
+
+    The caller's `"` and `\\` are escaped so the query cannot close the string
+    early and add terms of its own. With a window, the query is parenthesised so
+    an OR inside it cannot swallow the dates: unparenthesised, `a OR b AND
+    received>=...` ignored the window when tried live on 2026-11-20. The dates go
+    in KQL because Graph answers 400 SearchWithFilter to a $filter beside
+    $search (tried live, 2026-11-20).
+    """
+    escaped = query.replace("\\", "\\\\").replace('"', '\\"')
+    terms = []
+    if since:
+        terms.append(f"received>={since.isoformat()}")
+    if before:
+        terms.append(f"received<{before.isoformat()}")
+    if not terms:
+        return f'"{escaped}"'
+    return '"' + " AND ".join([f"({escaped})", *terms]) + '"'
+
+
 class GraphMailbox:
     """The three read operations, and nothing else.
 
@@ -63,19 +85,30 @@ class GraphMailbox:
         self.account = account
         self.transport = transport
 
-    def list_recent(self, limit: int = 20) -> list[MessageSummary]:
+    def list_recent(self, limit: int = 20, *, since: date | None = None,
+                    before: date | None = None) -> list[MessageSummary]:
+        # Graph wants an $orderby property in the $filter too, and first; the
+        # window is on that same property, so both hold.
+        clauses = []
+        if since:
+            clauses.append(f"receivedDateTime ge {since.isoformat()}T00:00:00Z")
+        if before:
+            clauses.append(f"receivedDateTime lt {before.isoformat()}T00:00:00Z")
         url = self._url(
             "/me/messages",
             select=SUMMARY_FIELDS,
             top=limit,
             orderby="receivedDateTime desc",
+            filter=" and ".join(clauses) or None,
         )
         return [MessageSummary.from_graph(raw, self.account) for raw in self._pages(url, limit)]
 
-    def search(self, query: str, limit: int = 20) -> list[MessageSummary]:
-        # $orderby is deliberately not applied here: results come back in
-        # Graph's own relevance order for the search term.
-        url = self._url("/me/messages", select=SUMMARY_FIELDS, top=limit, search=f'"{query}"')
+    def search(self, query: str, limit: int = 20, *, since: date | None = None,
+               before: date | None = None) -> list[MessageSummary]:
+        # $orderby cannot be combined with $search on messages; Graph returns
+        # matches newest first on its own (seen live, 2026-11-20).
+        url = self._url("/me/messages", select=SUMMARY_FIELDS, top=limit,
+                        search=_kql(query, since, before))
         return [MessageSummary.from_graph(raw, self.account) for raw in self._pages(url, limit)]
 
     def read(self, message_id: str) -> Message:
@@ -97,6 +130,7 @@ class GraphMailbox:
         top: int | None = None,
         orderby: str | None = None,
         search: str | None = None,
+        filter: str | None = None,
     ) -> str:
         params: dict[str, str] = {}
         if select:
@@ -107,6 +141,8 @@ class GraphMailbox:
             params["$orderby"] = orderby
         if search:
             params["$search"] = search
+        if filter:
+            params["$filter"] = filter
         query = urllib.parse.urlencode(params, safe='",: ')
         return f"{BASE}{path}" + (f"?{query}" if query else "")
 

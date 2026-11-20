@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import email
 import re
+from datetime import date
 from typing import Callable, Iterable
 
 from .models import Message, MessageSummary, imap_body_text
@@ -98,6 +99,35 @@ def _quote(value: str) -> str:
     """An IMAP quoted string: backslash and quote escaped, controls refused."""
     _reject_control_chars(value, "value")
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+# RFC 3501's date-text months, in English whatever the locale -- strftime("%b")
+# would follow it.
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def _imap_date(day: date) -> str:
+    return f"{day.day:02d}-{_MONTHS[day.month - 1]}-{day.year}"
+
+
+def _dated(criteria: tuple[str, ...], since: date | None, before: date | None) -> tuple[str, ...]:
+    """SINCE / BEFORE added to the search keys.
+
+    RFC 3501 defines both on the internal date (when the server took the message
+    in), disregarding time and zone: SINCE is on or after, BEFORE strictly before,
+    which is exactly since-inclusive, before-exclusive. A leading CHARSET argument
+    must stay first, so the dates go after it.
+    """
+    keys = []
+    if since:
+        keys += ["SINCE", _imap_date(since)]
+    if before:
+        keys += ["BEFORE", _imap_date(before)]
+    if not keys:
+        return tuple(criteria)
+    head = 2 if criteria[:1] == ("CHARSET",) else 0
+    return (*criteria[:head], *keys, *criteria[head:])
 
 
 def _folder_names(conn) -> list[str]:
@@ -217,10 +247,12 @@ class ImapMailbox:
 
     # -- the three operations ------------------------------------------------
 
-    def list_recent(self, limit: int = 20) -> list[MessageSummary]:
-        return self._summaries(("ALL",), limit)
+    def list_recent(self, limit: int = 20, *, since: date | None = None,
+                    before: date | None = None) -> list[MessageSummary]:
+        return self._summaries(_dated(("ALL",), since, before), limit)
 
-    def search(self, query: str, limit: int = 20) -> list[MessageSummary]:
+    def search(self, query: str, limit: int = 20, *, since: date | None = None,
+               before: date | None = None) -> list[MessageSummary]:
         """Quoted, not interpolated.
 
         Unquoted, a multi-word query was parsed as several search keys -- so this
@@ -235,7 +267,7 @@ class ImapMailbox:
                 "quoted term, Gmail answers BAD and wants a literal. Use an ASCII "
                 "term for now; see README.md."
             )
-        return self._summaries(("TEXT", _quote(query)), limit)
+        return self._summaries(_dated(("TEXT", _quote(query)), since, before), limit)
 
     def read(self, message_id: str) -> Message:
         raw = _message_bytes(self._connect, message_id)

@@ -5,6 +5,7 @@ matters more than on a response we already control -- the same reasoning as
 tests/test_graph.py, and the reason PEEK-versus-RFC822 is testable at all.
 """
 import email
+from datetime import date
 from email.message import EmailMessage
 
 import pytest
@@ -221,6 +222,58 @@ def test_the_limit_is_honoured_across_folders():
 
 
 # --- ids --------------------------------------------------------------------
+
+# --- a window of dates ---------------------------------------------------------
+
+def _searches(c):
+    return [cmd for cmd in c.commands if cmd[:2] == ("UID", "SEARCH")]
+
+
+def test_no_window_sends_the_same_search_as_before():
+    c = FakeIMAP()
+    mailbox(c).list_recent()
+    mailbox(c).search("insurance")
+    assert [cmd[3:] for cmd in _searches(c)] == [("ALL",), ("TEXT", '"insurance"')]
+
+
+def test_a_window_is_sent_as_since_and_before_in_rfc3501_date_form():
+    c = FakeIMAP()
+    mailbox(c).list_recent(since=date(2025, 3, 1), before=date(2025, 4, 1))
+    [search] = _searches(c)
+    assert search[3:] == ("SINCE", "01-Mar-2025", "BEFORE", "01-Apr-2025", "ALL")
+
+
+def test_either_end_of_the_window_can_be_left_open():
+    c = FakeIMAP()
+    mailbox(c).list_recent(since=date(2025, 12, 9))
+    mailbox(c).search("x", before=date(2025, 1, 31))
+    assert [cmd[3:] for cmd in _searches(c)] == [
+        ("SINCE", "09-Dec-2025", "ALL"),
+        ("BEFORE", "31-Jan-2025", "TEXT", '"x"'),
+    ]
+
+
+def test_the_month_is_english_whatever_the_locale():
+    from agent_mail.imap import _imap_date
+    assert [_imap_date(date(2025, m, 1))[3:6] for m in range(1, 13)] == [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def test_the_window_is_sent_in_every_folder():
+    c = FakeIMAP(folders=("INBOX", "Archive"), messages={"INBOX": {1: rfc822()}, "Archive": {2: rfc822()}})
+    mailbox(c).search("x", since=date(2025, 3, 1))
+    searches = _searches(c)
+    assert len(searches) == 2
+    assert all("SINCE" in cmd and "01-Mar-2025" in cmd for cmd in searches)
+
+
+def test_a_leading_charset_stays_first_when_dates_are_added():
+    """RFC 3501 puts CHARSET before every search key. The non-ASCII search path
+    (PR #11) sends CHARSET UTF-8 ... TEXT with the term as a trailing literal."""
+    from agent_mail.imap import _dated
+    assert _dated(("CHARSET", "UTF-8", "TEXT"), date(2025, 3, 1), date(2025, 4, 1)) == (
+        "CHARSET", "UTF-8", "SINCE", "01-Mar-2025", "BEFORE", "01-Apr-2025", "TEXT")
+
 
 def test_an_id_carries_folder_uidvalidity_and_uid():
     c = FakeIMAP(messages={"INBOX": {12: rfc822()}})

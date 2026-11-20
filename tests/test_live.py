@@ -26,6 +26,7 @@ import socket
 import ssl
 import threading
 import time
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -235,6 +236,72 @@ def test_hotmail_lists_and_reads_back():
     assert blank == 0, f"{blank} of {len(summaries)} summaries lack a sender or date"
     assert elapsed < LISTING_BUDGET_SECONDS, f"listing {LIMIT} took {elapsed:.1f}s"
     assert mailbox.read(summaries[0].id).id == summaries[0].id
+
+
+# -- a window of dates ----------------------------------------------------------
+# A week a month back: old enough to sit below any newest-`limit` listing, so the
+# rows can only have come from the window.
+
+WINDOW_SINCE = date.today() - timedelta(days=35)
+WINDOW_BEFORE = WINDOW_SINCE + timedelta(days=7)
+
+
+def _outside(summaries, slack: timedelta) -> int:
+    """How many rows fall outside the window, counted rather than quoted."""
+    low = datetime.combine(WINDOW_SINCE, datetime.min.time(), timezone.utc) - slack
+    high = datetime.combine(WINDOW_BEFORE, datetime.min.time(), timezone.utc) + slack
+    bad = 0
+    for m in summaries:
+        received = datetime.fromisoformat(m.received.replace("Z", "+00:00"))
+        if received.tzinfo is None:
+            received = received.replace(tzinfo=timezone.utc)
+        bad += not (low <= received < high)
+    return bad
+
+
+def test_an_imap_listing_keeps_to_a_window(imap_account):
+    """SINCE/BEFORE work on the arrival date, ignoring zone; `received` is the
+    Date header in UTC. A day's slack covers the zone and an ordinary delivery
+    delay, and nothing more: a row a week out means the window was ignored."""
+    account, host, pin = imap_account
+    mailbox = server._imap_mailbox(account, host, server.IMAP_ACCOUNTS[account][1], pin)
+    summaries, _ = _within_budget(lambda: mailbox.list_recent(
+        limit=LIMIT, since=WINDOW_SINCE, before=WINDOW_BEFORE))
+    bad = _outside(summaries, timedelta(days=1))
+    assert bad == 0, f"{bad} of {len(summaries)} rows fall outside the window"
+
+
+def _hotmail_or_skip() -> GraphMailbox:
+    if not (server._cache_dir() / "hotmail.json").exists():
+        pytest.skip("needs a cached hotmail token")
+    try:
+        client_id = server._hotmail_client_id()
+    except ValueError:
+        pytest.skip("needs the hotmail client ID")
+    auth = DeviceCodeAuth(client_id, server.GRAPH_SCOPES, server._cache_dir() / "hotmail.json", interactive=False)
+    return GraphMailbox(auth, account="hotmail")
+
+
+@pytest.mark.parametrize("how", ["list", "search"])
+def test_a_hotmail_window_keeps_to_it_and_comes_back_newest_first(how):
+    """Listing is a $filter, search a KQL `received` term, and Graph's search
+    order is not documented as newest first; this is where it is observed."""
+    mailbox = _hotmail_or_skip()
+    window = {"limit": LIMIT, "since": WINDOW_SINCE, "before": WINDOW_BEFORE}
+    try:
+        if how == "list":
+            summaries, _ = _within_budget(lambda: mailbox.list_recent(**window))
+        else:
+            # A term nearly every message carries, so the window is what narrows it.
+            summaries, _ = _within_budget(lambda: mailbox.search("a OR e OR the OR de", **window))
+    except SignInRequired:
+        pytest.skip("the hotmail refresh token no longer works; run `uv run agent-mail login hotmail`")
+    if not summaries:
+        pytest.skip("nothing arrived in hotmail that week")
+    bad = _outside(summaries, timedelta(0))
+    assert bad == 0, f"{bad} of {len(summaries)} rows fall outside the window"
+    received = [m.received for m in summaries]
+    assert received == sorted(received, reverse=True)
 
 
 # -- attachments --------------------------------------------------------------
