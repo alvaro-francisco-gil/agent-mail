@@ -114,6 +114,34 @@ sit in two mailboxes. Entries hold ids and the caller's `where`/`note`, never a
 subject, sender or body. The file lives beside the tokens because this repo is
 public.
 
+## A window of dates
+
+`mail_list_recent` and `mail_search` take `since` and `before`, each `YYYY-MM-DD`
+and optional: `since` inclusive, `before` exclusive, so March 2025 is
+`since="2025-03-01", before="2025-04-01"`. It is the way to reach mail below the
+newest `limit`; raising `limit` is not (see "Fetching every matching UID" below).
+Anything other than that exact shape, or a window that ends before it starts, is
+refused before a mailbox is touched, so a date cannot carry anything into either
+protocol.
+
+Both are the date mail was **received**, at day granularity, and the two
+transports draw the day line slightly differently:
+
+| | listing | search |
+|---|---|---|
+| hotmail | `$filter=receivedDateTime ge …T00:00:00Z and receivedDateTime lt …` | KQL inside `$search`: `"(query) AND received>=… AND received<…"` |
+| IMAP | `UID SEARCH SINCE dd-Mon-yyyy BEFORE dd-Mon-yyyy ALL` | the same keys before `TEXT "query"` |
+
+- **hotmail** cuts at midnight UTC. A date `$filter` beside `$search` is refused
+  (`400 SearchWithFilter`, tried 2026-11-20), hence KQL for search. The caller's
+  query is parenthesised so an `OR` in it cannot swallow the dates — unbracketed,
+  `a OR b AND received>=…` ignored the window — and a `"` or `\` in it is
+  escaped so it cannot close the quoted string and add terms of its own.
+- **IMAP** `SINCE`/`BEFORE` work on the server's arrival date, ignoring time and
+  zone (RFC 3501). The `received` shown in a summary is the `Date` header in UTC,
+  so a message near midnight can show a date a day outside the window it matched.
+  Within the window, the last `limit` UIDs per folder rule still holds.
+
 ## Attachments
 
 `mail_read` lists a message's attachments: `id`, `name`, `content_type`, `size`,
@@ -232,8 +260,11 @@ https://myaccount.google.com/apppasswords
 
 ### What differs from the Graph side, and is not a bug
 
-- **Search has no ranking.** Graph returns relevance order; IMAP `SEARCH TEXT`
-  returns matches, so results come back newest-first instead.
+- **Search has no ranking.** IMAP `SEARCH TEXT` returns matches, so results are
+  sorted newest-first here. Graph's search is not by relevance either, whatever
+  this README used to say: Microsoft documents message search results as sorted by
+  date sent, and `tests/test_live.py` checks they come back newest-first by
+  `receivedDateTime`. So every account searches in the same order.
 - **Ids are `folder:uidvalidity:uid`.** A UID means something only inside one
   folder, and only until the server renumbers, so `read` re-checks UIDVALIDITY and
   raises `StaleMessageId` rather than returning whichever message now holds that

@@ -1,3 +1,6 @@
+import urllib.parse
+from datetime import date
+
 import pytest
 
 from agent_mail.graph import GraphMailbox
@@ -90,6 +93,58 @@ def test_search_passes_the_query_through():
     t = FakeTransport()
     mailbox(t).search("insurance")
     assert "insurance" in t.last_url
+
+
+def _params(url):
+    return dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))
+
+
+def test_no_window_adds_no_filter_and_keeps_the_search_as_one_quoted_term():
+    t = FakeTransport()
+    mailbox(t).list_recent()
+    mailbox(t).search("insurance")
+    assert "$filter" not in _params(t.urls[0])
+    assert _params(t.urls[1])["$search"] == '"insurance"'
+
+
+def test_a_listing_window_is_a_filter_on_the_ordered_property():
+    t = FakeTransport()
+    mailbox(t).list_recent(since=date(2025, 3, 1), before=date(2025, 4, 1))
+    params = _params(t.last_url)
+    assert params["$filter"] == ("receivedDateTime ge 2025-03-01T00:00:00Z and "
+                                 "receivedDateTime lt 2025-04-01T00:00:00Z")
+    assert params["$orderby"] == "receivedDateTime desc"
+
+
+def test_one_open_end_filters_on_the_other_alone():
+    t = FakeTransport()
+    mailbox(t).list_recent(before=date(2025, 4, 1))
+    assert _params(t.last_url)["$filter"] == "receivedDateTime lt 2025-04-01T00:00:00Z"
+
+
+def test_a_search_window_is_kql_inside_the_search_not_a_filter():
+    """Graph answers 400 SearchWithFilter to $filter beside $search."""
+    t = FakeTransport()
+    mailbox(t).search("amazon OR factura", since=date(2025, 3, 1), before=date(2025, 4, 1))
+    params = _params(t.last_url)
+    assert "$filter" not in params
+    assert params["$search"] == '"(amazon OR factura) AND received>=2025-03-01 AND received<2025-04-01"'
+
+
+def test_a_quote_in_the_query_cannot_close_the_search_string():
+    t = FakeTransport()
+    mailbox(t).search('x" OR from:evil "y', since=date(2025, 3, 1))
+    search = _params(t.last_url)["$search"]
+    assert search == '"(x\\" OR from:evil \\"y) AND received>=2025-03-01"'
+    # Every inner quote is escaped, so only the outer pair delimits.
+    inner = search[1:-1]
+    assert all(inner[i - 1] == "\\" for i, ch in enumerate(inner) if ch == '"')
+
+
+def test_a_backslash_in_the_query_is_escaped_too():
+    t = FakeTransport()
+    mailbox(t).search('a\\')
+    assert _params(t.last_url)["$search"] == '"a\\\\"'
 
 
 def test_paging_follows_odata_nextlink_verbatim():

@@ -26,8 +26,10 @@ from __future__ import annotations
 import imaplib
 import json
 import os
+import re
 import sys
 from dataclasses import asdict
+from datetime import date
 from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
@@ -309,26 +311,68 @@ INCLUDE_HANDLED = (
 )
 
 
+DATE_RANGE = (
+    " since/before narrow it to a window of received dates, as YYYY-MM-DD: since "
+    "inclusive, before exclusive, either alone. That is how to reach mail older "
+    "than the newest `limit`; raising `limit` is not. Day granularity: the IMAP "
+    "accounts use the server's arrival date, hotmail midnight UTC, so a message "
+    "near midnight can land a day either side."
+)
+
+_ISO_DAY = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+
+
+def _day(value: str | None, name: str) -> date | None:
+    """YYYY-MM-DD and nothing else, so a date cannot carry anything into a protocol.
+
+    date.fromisoformat alone would also take 20250301 and week dates; the shape is
+    checked first so the one documented form is the only accepted one.
+    """
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str) or not _ISO_DAY.fullmatch(value):
+        raise ValueError(f"{name} must be a date as YYYY-MM-DD, got {value!r}")
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise ValueError(f"{name} {value!r} is not a real date") from None
+
+
+def _window(since: str | None, before: str | None) -> dict:
+    """Parsed before any mailbox is built, so a bad date costs no connection.
+
+    Only the ends given are passed on, so an undated call reaches the mailbox
+    exactly as it did before dates existed.
+    """
+    start, end = _day(since, "since"), _day(before, "before")
+    if start and end and start >= end:
+        raise ValueError(f"since ({since}) must be earlier than before ({before}); before is exclusive")
+    return {k: v for k, v in (("since", start), ("before", end)) if v is not None}
+
+
 @mcp.tool(
-    description="List the most recent messages in a mailbox, newest first." + INCLUDE_HANDLED + UNTRUSTED,
+    description="List the most recent messages in a mailbox, newest first." + DATE_RANGE
+    + INCLUDE_HANDLED + UNTRUSTED,
     annotations=READ_ONLY,
 )
-def mail_list_recent(account: str = "hotmail", limit: int = 20, include_handled: bool = True) -> list[dict]:
-    return _rows(account, _mailbox(account).list_recent(limit=limit), include_handled)
+def mail_list_recent(account: str = "hotmail", limit: int = 20, include_handled: bool = True,
+                     since: str | None = None, before: str | None = None) -> list[dict]:
+    window = _window(since, before)
+    return _rows(account, _mailbox(account).list_recent(limit=limit, **window), include_handled)
 
 
 @mcp.tool(
     description=(
-        "Search a mailbox. The query matches senders, subjects and body text. "
-        "Ordering depends on the provider: hotmail returns Graph's relevance "
-        "order, while the IMAP accounts have no ranking and come back "
-        "newest-first." + INCLUDE_HANDLED + UNTRUSTED
+        "Search a mailbox, newest first. The query matches senders, subjects and "
+        "body text." + DATE_RANGE + INCLUDE_HANDLED + UNTRUSTED
     ),
     annotations=READ_ONLY,
 )
 def mail_search(query: str, account: str = "hotmail", limit: int = 20,
-                include_handled: bool = True) -> list[dict]:
-    return _rows(account, _mailbox(account).search(query, limit=limit), include_handled)
+                include_handled: bool = True, since: str | None = None,
+                before: str | None = None) -> list[dict]:
+    window = _window(since, before)
+    return _rows(account, _mailbox(account).search(query, limit=limit, **window), include_handled)
 
 
 @mcp.tool(
