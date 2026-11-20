@@ -43,6 +43,9 @@ class FakeIMAP:
         self.commands = []
         self.selected = None
         self.logged_out = False
+        # imaplib's attribute: bytes sent as a literal after the next command.
+        self.literal = None
+        self.literals = []  # (UID command, literal sent with it)
 
     def list(self):
         self.commands.append(("LIST",))
@@ -60,6 +63,9 @@ class FakeIMAP:
 
     def uid(self, command, *args):
         self.commands.append(("UID", command, *args))
+        # What imaplib does: the pending literal goes with this command, then clears.
+        self.literals.append((("UID", command, *args), self.literal))
+        self.literal = None
         if command.upper() == "SEARCH":
             uids = sorted(self.messages.get(self.selected, {}))
             return "OK", [" ".join(str(u) for u in uids).encode()]
@@ -366,10 +372,48 @@ def test_a_quote_inside_a_query_is_escaped_not_refused():
     assert any(r'\"hello\"' in i for i in c.issued)
 
 
-def test_a_non_ascii_query_is_refused_clearly_rather_than_crashing():
-    """Pre-existing and not part of H3: imaplib encodes arguments as ASCII, so a
-    Spanish search term raised UnicodeEncodeError from deep inside the library.
-    A clear refusal is strictly better than that, since the capability does not
-    work either way -- see the README for why the real fix is not a one-liner."""
-    with pytest.raises(ValueError, match="non-ASCII"):
-        mailbox(FakeIMAP()).search("sesión")
+def test_a_non_ascii_query_is_sent_as_a_utf8_literal():
+    """Gmail answers BAD to `CHARSET UTF-8 TEXT "término"`; the literal form is
+    what RFC 3501 allows for any string, so it is the one path for every server."""
+    c = FakeIMAP()
+    mailbox(c).search("sesión")
+    searches = [(cmd, lit) for cmd, lit in c.literals if cmd[:2] == ("UID", "SEARCH")]
+    assert searches == [(("UID", "SEARCH", "CHARSET", "UTF-8", "TEXT"), "sesión".encode("utf-8"))]
+
+
+def test_the_literal_is_set_again_for_every_folder():
+    """imaplib clears `literal` after one command, so each folder's SEARCH needs
+    it set afresh -- otherwise the second folder sends a SEARCH with no term."""
+    c = FakeIMAP(folders=("INBOX", "Archive"), messages={"INBOX": {1: rfc822()}, "Archive": {2: rfc822()}})
+    mailbox(c).search("término")
+    sent = [lit for cmd, lit in c.literals if cmd[:2] == ("UID", "SEARCH")]
+    assert sent == ["término".encode("utf-8")] * 2
+
+
+def test_the_literal_does_not_leak_into_the_fetches():
+    c = FakeIMAP()
+    mailbox(c).search("sesión")
+    fetched = [lit for cmd, lit in c.literals if cmd[:2] == ("UID", "FETCH")]
+    assert fetched and all(lit is None for lit in fetched)
+    assert c.literal is None
+
+
+def test_an_ascii_query_is_still_quoted_and_sends_no_literal():
+    c = FakeIMAP()
+    mailbox(c).search("invoice")
+    assert ("UID", "SEARCH", None, "TEXT", '"invoice"') in c.commands
+    assert all(lit is None for _, lit in c.literals)
+
+
+def test_a_non_ascii_query_carrying_crlf_is_still_refused_before_connecting():
+    """A literal could carry CR/LF safely, but the refusal is the documented
+    control and stays in force on the new path too."""
+    opened = []
+
+    def connect():
+        opened.append(True)
+        return FakeIMAP()
+
+    with pytest.raises(ValueError, match="control character"):
+        ImapMailbox(connect, account="gmail").search("sesión\r\nA1 EXPUNGE")
+    assert opened == []
