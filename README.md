@@ -279,24 +279,30 @@ certificate for `*.dondominio.com`, so submission verifies normally **when
 addressed as `mailsrv1.dondominio.com`**. `smtp.cultuvilla.es` fails only because
 that name is not on the certificate.
 
-### Search cannot take a non-ASCII term yet
+### A non-ASCII search term goes as a literal
 
-`search("sesión")` is **refused with a clear error**. imaplib encodes arguments as
-ASCII, so before the refusal existed it raised `UnicodeEncodeError` from inside the
-library. The capability did not work either way; the refusal only makes that
-legible.
+`search("sesión")` is sent as `UID SEARCH CHARSET UTF-8 TEXT {7}` followed by the
+UTF-8 bytes: an IMAP literal, the RFC 3501 form for any string argument. An ASCII
+term is still sent quoted, as before.
 
-The real fix is `SEARCH CHARSET UTF-8`, and it is not a one-liner because the two
-servers disagree about its form (tested 2026-10-15, neither advertises
-`UTF8=ACCEPT`):
+The quoted form is not an option for everything because the servers disagree
+about it (tested 2026-10-15, neither advertises `UTF8=ACCEPT`):
 
-| Server | `UID SEARCH CHARSET UTF-8 TEXT "término"` |
-|---|---|
-| `imap.cultuvilla.es` | `OK` |
-| `imap.gmail.com` | `BAD Could not parse command` — wants a literal, not a quoted string |
+| Server | `UID SEARCH CHARSET UTF-8 TEXT "término"` | the same as a literal |
+|---|---|---|
+| `imap.cultuvilla.es` | `OK` | `OK` |
+| `imap.gmail.com` | `BAD Could not parse command` | `OK` |
 
-So it needs a literal and probably a per-server branch. Worth doing: half of
-Álvaro's mail is in Spanish.
+The literal column was checked on 2026-11-20 against every IMAP account with a
+credential on this machine; `tests/test_live.py` keeps checking it. One path
+serves both servers, so there is no per-host branch.
+
+imaplib frames the literal itself (`conn.literal`, sent after the server's `+`)
+and clears it after one command, so `_search` sets it again before each folder's
+`UID SEARCH`. Control characters stay refused even though a literal could carry
+them: that refusal is the injection fix, and nobody searches for a newline.
+
+Matching is exact: "sesion" does not find "sesión".
 
 ### Two things that look right and are not
 

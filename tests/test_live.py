@@ -29,7 +29,7 @@ import time
 
 import pytest
 
-from agent_mail import server
+from agent_mail import imap, server
 from agent_mail.attachments import MAX_ATTACHMENT_BYTES, GraphAttachments, ImapAttachments
 from agent_mail.oauth import DeviceCodeAuth, SignInRequired
 from agent_mail.graph import GraphMailbox
@@ -205,6 +205,34 @@ def test_reading_does_not_mark_a_message_seen(imap_listing, imap_account):
     before = flags()
     mailbox.read(summaries[0].id)
     assert flags() == before
+
+
+# -- search: a Spanish term -----------------------------------------------------
+
+# Fixed, and common enough in Álvaro's mail that a match is likely; an empty
+# result still passes. Only the server's answer is asserted, never a result.
+NON_ASCII_TERM = "sesión"
+
+
+def test_a_non_ascii_search_is_accepted_by_the_server(imap_listing):
+    """On 2026-10-15 Gmail answered BAD to the quoted form of this. The literal
+    must come back OK on every server, checked on the raw answer, because a NO
+    would otherwise read as "no matches"."""
+    mailbox, _, _ = imap_listing
+    conn = mailbox._connect()
+    try:
+        folder = imap._scope(conn)[0]
+        conn.select(imap._quote(folder), readonly=True)
+        typ, _ = imap._search(conn, ("CHARSET", "UTF-8", "TEXT"), NON_ASCII_TERM.encode("utf-8"))
+    finally:
+        conn.logout()
+    assert typ == "OK", f"UID SEARCH with a UTF-8 literal answered {typ}"
+
+
+def test_a_non_ascii_search_completes_through_the_mailbox(imap_listing):
+    mailbox, _, _ = imap_listing
+    summaries, _ = _within_budget(lambda: mailbox.search(NON_ASCII_TERM, limit=5))
+    assert len(summaries) <= 5
 
 
 # -- hotmail ------------------------------------------------------------------

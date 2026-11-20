@@ -183,6 +183,22 @@ def _snippet(mime_header: bytes | None, body: bytes | None) -> str:
     return re.sub(r"\s+", " ", text).strip()[:SNIPPET_CHARS]
 
 
+def _search(conn, criteria, literal: bytes | None):
+    """UID SEARCH, with `literal` sent as the last argument when given.
+
+    imaplib appends ` {n}` to the command and sends `conn.literal` after the
+    server's continuation, then clears it -- so it is set here, immediately
+    before the one command it belongs to, once per folder.
+    """
+    if literal is None:
+        return conn.uid("SEARCH", None, *criteria)
+    conn.literal = literal
+    try:
+        return conn.uid("SEARCH", *criteria)
+    finally:
+        conn.literal = None
+
+
 def _message_bytes(connect: Callable[[], object], message_id: str) -> bytes:
     """One whole message by id, readonly and with PEEK. attachments.py reads through
     this too, so there is one path to a message and it cannot mark anything."""
@@ -227,15 +243,15 @@ class ImapMailbox:
         was a correctness bug as well as the injection one. Validation happens
         before any connection is opened.
         """
-        if not query.isascii():
-            raise ValueError(
-                "the search query contains non-ASCII characters, which this "
-                "transport cannot send yet. IMAP needs SEARCH CHARSET UTF-8, and "
-                "the two servers disagree about its form -- DonDominio accepts a "
-                "quoted term, Gmail answers BAD and wants a literal. Use an ASCII "
-                "term for now; see README.md."
-            )
-        return self._summaries(("TEXT", _quote(query)), limit)
+        _reject_control_chars(query, "the search query")
+        if query.isascii():
+            return self._summaries(("TEXT", _quote(query)), limit)
+        # A non-ASCII term goes as a CHARSET UTF-8 literal. Gmail answers BAD to the
+        # quoted form; a literal is the RFC 3501 form for any string, so one path
+        # serves both servers. Control characters stay refused above even though
+        # a literal could carry them: that refusal is the documented control.
+        return self._summaries(("CHARSET", "UTF-8", "TEXT"), limit,
+                               literal=query.encode("utf-8"))
 
     def read(self, message_id: str) -> Message:
         raw = _message_bytes(self._connect, message_id)
@@ -243,21 +259,23 @@ class ImapMailbox:
 
     # -- internals -----------------------------------------------------------
 
-    def _summaries(self, criteria: Iterable[str], limit: int) -> list[MessageSummary]:
+    def _summaries(self, criteria: Iterable[str], limit: int,
+                   literal: bytes | None = None) -> list[MessageSummary]:
         conn = self._connect()
         found: list[MessageSummary] = []
         try:
             for folder in _scope(conn):
-                found.extend(self._folder_summaries(conn, folder, criteria, limit))
+                found.extend(self._folder_summaries(conn, folder, criteria, limit, literal))
         finally:
             self._close(conn)
         found.sort(key=lambda m: m.received, reverse=True)
         return found[:limit]
 
-    def _folder_summaries(self, conn, folder, criteria, limit) -> list[MessageSummary]:
+    def _folder_summaries(self, conn, folder, criteria, limit,
+                          literal: bytes | None = None) -> list[MessageSummary]:
         conn.select(_quote(folder), readonly=True)
         uidvalidity = _uidvalidity(conn, folder)
-        typ, data = conn.uid("SEARCH", None, *criteria)
+        typ, data = _search(conn, criteria, literal)
         uids = (data[0] or b"").split() if data else []
         out = []
         # UIDs ascend with arrival, so the newest are at the end. Fetch only that
