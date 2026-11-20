@@ -1,9 +1,9 @@
 # Listing and searching mail by date
 
 **Priority:** medium — today no tool can reach mail older than the newest `limit` matches, which the record repo's mail sweep and every "when did this arrive" question need
-**Landed:** none
-**Gate:** none
-**Next:** verify the plan against main, then build it (workspace worker, 2026-11-20)
+**Landed:** PR #12 open: date window on the three methods; 201 tests pass, live dated search on Gmail returns only results inside the window
+**Gate:** blocked:Álvaro reviews and merges PR #12
+**Next:** retire the plan on merge (README "A window of dates" and the tests are the record). If #11 merges first, rebase #12 with the one-line `_dated()` resolution its PR body gives
 
 **Goal:** An agent can ask for mail from a date window ("March 2025 from the AEAT")
 instead of only the newest N, on all five accounts, without a new tool or a new
