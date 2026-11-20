@@ -1,6 +1,9 @@
 # IMAP search takes a Spanish term
 
 **Priority:** medium — known pain the README names itself: "Worth doing: half of Álvaro's mail is in Spanish"
+**Landed:** none
+**Gate:** none
+**Next:** verify the plan against main, then build it (workspace worker, 2026-11-20)
 
 **Goal:** `mail_search("sesión", account=…)` works on the four IMAP accounts instead of
 being refused, so a Spanish word can be searched for as it is spelled.
